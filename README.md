@@ -4,6 +4,12 @@ Skill per [pi](https://pi.dev) che trasforma la storia di un repository Git in u
 `gitGraph`** con rami, fork e merge ricostruiti (non una fila indiana), più — opzionalmente — il
 rendering PNG locale.
 
+![Esempio: tre rami (feature/auth, feature/payments, hotfix/session), merge ricostruiti e tag v1.0.0 / v1.1.0](skills/gitgraph/assets/example.png)
+
+*Esempio generato da questo pacchetto: `--png` su un repo con tre rami e due merge. I merge portano
+l'id del commit di merge, i tag git compaiono come `tag:`, i subject più lunghi di 32 caratteri sono
+troncati. Riproducibile con `python3 skills/gitgraph/scripts/gitgraph.py <repo> -n 25 --png out.png`.*
+
 Output possibili:
 
 | Cosa | Comando | Destinazione |
