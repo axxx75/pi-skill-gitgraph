@@ -39,11 +39,15 @@ Da path locale (senza copiare nulla: il pacchetto è caricato dal path):
 pi install /percorso/pi-skill-gitgraph
 ```
 
-Da repository Git, quando sarà pubblicato:
+Da repository Git — **senza ref** = installa/sempre aggiornata all'ultima versione online
+(`pi update` riallinea il checkout al `main`):
 
 ```bash
-pi install git:github.com/axxx75/pi-skill-gitgraph@v1.0.0
+pi install git:github.com/axxx75/pi-skill-gitgraph
 ```
+
+⚠️ Non usare `@v1.0.1`: un tag/commit come ref è **pinnato per sempre** e `pi update` non lo
+sposta più (docs pi `packages.md`). Un ref serve solo per fissare una versione nota.
 
 Verifica che il pacchetto sia dichiarato:
 
