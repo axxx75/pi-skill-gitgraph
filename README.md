@@ -36,7 +36,7 @@ pi install /percorso/pi-skill-gitgraph
 Da repository Git, quando sarà pubblicato:
 
 ```bash
-pi install git:github.com/<utente>/pi-skill-gitgraph@v1.0.0
+pi install git:github.com/Axxx75/pi-skill-gitgraph@v1.0.0
 ```
 
 Verifica che il pacchetto sia dichiarato:
@@ -128,7 +128,7 @@ senza averlo chiesto al proprietario.
 ## Uninstall
 
 ```bash
-pi remove /percorso/pi-skill-gitgraph    # o: pi remove git:github.com/<utente>/pi-skill-gitgraph
+pi remove /percorso/pi-skill-gitgraph    # o: pi remove git:github.com/Axxx75/pi-skill-gitgraph
 ```
 
 Nessun file scritto fuori dal repository target e da `/tmp`: non resta niente da pulire.
