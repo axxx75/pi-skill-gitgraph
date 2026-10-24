@@ -25,6 +25,28 @@ grep -q '    merge feature_x id: ' <<<"$out" || { echo "FAIL: manca merge featur
 grep -q 'tag: "v1"' <<<"$out" || { echo "FAIL: tag git non riportato"; fail=1; }
 [ "$(grep -c 'commit id:' <<<"$out")" -eq 5 ] || { echo "FAIL: numero commit errato"; fail=1; }
 grep -q '```' <<<"$out" && { echo "FAIL: fence mermaid nell'output raw"; fail=1; }
+
+# --linear: deve restare un diagramma mermaid valido (init + gitGraph + commit)
+lin=$(python3 "$here/scripts/gitgraph.py" . --linear) || { echo "FAIL: --linear exit non-zero"; exit 1; }
+case "$(head -1 <<<"$lin")" in
+  '%%{init:'*) ;;
+  *) echo "FAIL: --linear, prima riga non e' la direttiva init"; fail=1 ;;
+esac
+grep -qx 'gitGraph' <<<"$lin" || { echo "FAIL: --linear, manca gitGraph"; fail=1; }
+grep -q 'commit id:' <<<"$lin" || { echo "FAIL: --linear, nessun commit"; fail=1; }
+# --linear con HEAD non risolto (ref puntato ma mai committato): deve restare exit 0
+ub="$tmp/ub"; mkdir "$ub"; git -C "$ub" init -q -b main
+ubg(){ git -C "$ub" -c user.email=t@t.t -c user.name=t "$@"; }
+ubg checkout -qb feature/x; echo u > "$ub/f.txt"; ubg add -A; ubg commit -qm U
+ubg symbolic-ref HEAD refs/heads/main
+lin=$(python3 "$here/scripts/gitgraph.py" "$ub" --linear) || { echo "FAIL: --linear su HEAD non risolto exit non-zero"; fail=1; }
+case "$(head -1 <<<"$lin")" in
+  '%%{init:'*) ;;
+  *) echo "FAIL: --linear HEAD non risolto, prima riga non e' la direttiva init"; fail=1 ;;
+esac
+grep -qx 'gitGraph' <<<"$lin" || { echo "FAIL: --linear HEAD non risolto, manca gitGraph"; fail=1; }
+grep -q 'commit id:' <<<"$lin" || { echo "FAIL: --linear HEAD non risolto, nessun commit"; fail=1; }
+
 md=$(python3 "$here/scripts/gitgraph.py" . --md) || { echo "FAIL: --md exit non-zero"; exit 1; }
 head -1 <<<"$md" | grep -qx '```mermaid' || { echo "FAIL: --md non apre il fence"; fail=1; }
 tail -1 <<<"$md" | grep -qx '```' || { echo "FAIL: --md non chiude il fence"; fail=1; }

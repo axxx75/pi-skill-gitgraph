@@ -14,10 +14,10 @@ import tempfile
 MAX_SUBJECT = 32
 
 
-def git(repo, *args):
+def git(repo, *args, strict=True):
     r = subprocess.run(["git", "-C", repo, *args],
                        capture_output=True, text=True, encoding="utf-8")
-    if r.returncode != 0:
+    if r.returncode != 0 and strict:
         sys.exit(f"git {' '.join(args)}: {r.stderr.strip()}")
     return r.stdout
 
@@ -138,8 +138,16 @@ def main():
     def commit_line(h):
         emit(f'commit id: "{short[h]}" tag: "{tag_of(h, label(commits[h][1]))}"')
 
+    def header(branch):
+        out.append('%%{init: {"gitGraph": {"mainBranchName": "'
+                   + name(branch) + '"}}}%%')
+        out.append("gitGraph")
+
     if a.linear:
-        # ordine parents-first, senza rami
+        # ordine parents-first, senza rami: il nome serve solo all'etichetta del ramo
+        # HEAD puo' non risolvere (ref puntato ma mai committato): non e' fatale
+        head = git(a.repo, "rev-parse", "--abbrev-ref", "HEAD", strict=False).strip()
+        header("main" if head in ("", "HEAD") else head)
         for h in reversed(list(commits)):
             commit_line(h)
     else:
@@ -170,9 +178,7 @@ def main():
         roots = [h for h in commits if not parents_of(h)]
         start = roots[-1] if roots else next(reversed(commits))
         start_branch = owner.get(start, "main")
-        out.append('%%{init: {"gitGraph": {"mainBranchName": "'
-                   + name(start_branch) + '"}}}%%')
-        out.append("gitGraph")
+        header(start_branch)
 
         heads, finished, deferred = {}, set(), []
         created, state = {name(start_branch)}, [start_branch]  # state[0] = ramo corrente

@@ -87,6 +87,7 @@ Cosa fa: costruisce un repo usa-e-getta (ramo `feature/x`, un merge `--no-ff`, u
 - `branch feature_x` e `merge feature_x id:` presenti (slash sanificato, merge ricostruito);
 - `tag: "v1"` riportato dal tag git reale;
 - numero di `commit id:` esatto (5);
+- con `--linear` l'output resta Mermaid valido: prima riga `%%{init:...}`, `gitGraph` presente, almeno un `commit id:`, anche con HEAD non risolto (ref puntato ma mai committato);
 - `--md` apre e chiude il fence, l'output raw **non** contiene fence;
 - un file che non è un repo viene rifiutato;
 - `--png` produce un file non vuoto (se `mmdc` è installato, altrimenti `SKIP`).
