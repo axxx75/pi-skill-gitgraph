@@ -1,0 +1,23 @@
+{
+  "name": "pi-skill-gitgraph",
+  "version": "1.0.0",
+  "description": "Skill gitgraph per pi: storia di un repo Git come grafo Mermaid gitGraph (rami, fork e merge ricostruiti) con render PNG opzionale.",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi-skill",
+    "git",
+    "mermaid",
+    "gitgraph"
+  ],
+  "files": [
+    "skills/",
+    "README.md",
+    "LICENSE"
+  ],
+  "pi": {
+    "skills": [
+      "./skills"
+    ]
+  }
+}
