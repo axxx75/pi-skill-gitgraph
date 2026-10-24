@@ -117,6 +117,7 @@ segnala `commit fuori dalle catene principali` o `merge non ricostruiti`, rilanc
 | `non e' un repository git` | path sbagliato o sottodirectory di un worktree | passa la radice del repo |
 | Grafo "a fila indiana" | finestra `-n` troppo piccola, merge fuori | `-n` più alto, o `--linear` se vuoi davvero la fila |
 | Repo con `main` divergente da `origin/main` | due lane: è la storia reale | nessuna azione |
+| Skill `gitgraph` duplicata (pacchetto + copia in `~/.pi/agent/skills/gitgraph`) | pi carica la **prima** trovata e stampa un warning di collisione | rimuovi la copia vecchia: `pi config` → Resources |
 
 ## Privacy
 
