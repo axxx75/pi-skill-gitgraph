@@ -138,8 +138,15 @@ def main():
     def commit_line(h):
         emit(f'commit id: "{short[h]}" tag: "{tag_of(h, label(commits[h][1]))}"')
 
+    def header(branch):
+        out.append('%%{init: {"gitGraph": {"mainBranchName": "'
+                   + name(branch) + '"}}}%%')
+        out.append("gitGraph")
+
     if a.linear:
-        # ordine parents-first, senza rami
+        # ordine parents-first, senza rami: il nome serve solo all'etichetta del ramo
+        head = git(a.repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
+        header("main" if head == "HEAD" else head)
         for h in reversed(list(commits)):
             commit_line(h)
     else:
@@ -170,9 +177,7 @@ def main():
         roots = [h for h in commits if not parents_of(h)]
         start = roots[-1] if roots else next(reversed(commits))
         start_branch = owner.get(start, "main")
-        out.append('%%{init: {"gitGraph": {"mainBranchName": "'
-                   + name(start_branch) + '"}}}%%')
-        out.append("gitGraph")
+        header(start_branch)
 
         heads, finished, deferred = {}, set(), []
         created, state = {name(start_branch)}, [start_branch]  # state[0] = ramo corrente
