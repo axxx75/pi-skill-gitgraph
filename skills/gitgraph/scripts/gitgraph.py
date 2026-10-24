@@ -14,10 +14,10 @@ import tempfile
 MAX_SUBJECT = 32
 
 
-def git(repo, *args):
+def git(repo, *args, strict=True):
     r = subprocess.run(["git", "-C", repo, *args],
                        capture_output=True, text=True, encoding="utf-8")
-    if r.returncode != 0:
+    if r.returncode != 0 and strict:
         sys.exit(f"git {' '.join(args)}: {r.stderr.strip()}")
     return r.stdout
 
@@ -145,8 +145,9 @@ def main():
 
     if a.linear:
         # ordine parents-first, senza rami: il nome serve solo all'etichetta del ramo
-        head = git(a.repo, "rev-parse", "--abbrev-ref", "HEAD").strip()
-        header("main" if head == "HEAD" else head)
+        # HEAD puo' non risolvere (ref puntato ma mai committato): non e' fatale
+        head = git(a.repo, "rev-parse", "--abbrev-ref", "HEAD", strict=False).strip()
+        header("main" if head in ("", "HEAD") else head)
         for h in reversed(list(commits)):
             commit_line(h)
     else:
