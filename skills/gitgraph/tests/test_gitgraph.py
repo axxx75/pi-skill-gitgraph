@@ -217,6 +217,28 @@ class RenderLabelTest(unittest.TestCase):
         self.assertEqual(out[2], '    commit id: "a1" tag: "fix \'rotto\' qui"')
 
 
+class EscapeTest(unittest.TestCase):
+    """P2-01: un solo punto di escaping; '#'/backslash/backtick/controlli non rompono il render."""
+
+    def tags_of(self, out):
+        return [line.partition(' tag: "')[2].rstrip('"') for line in out if ' tag: "' in line]
+
+    def render_one(self, subject, tags=None):
+        return self.tags_of(gitgraph.render({"c1": ([], subject)}, {"c1": "a1"},
+                                            tags or {}, [], linear=True, head="main"))
+
+    def test_metacaratteri_e_controlli_nel_subject(self):
+        self.assertEqual(self.render_one('foo"bar\\baz\x01 qux'),
+                         ["foo'bar#92;baz#65533; qux"])
+
+    def test_hash_e_backtick_nel_nome_tag(self):
+        self.assertEqual(self.render_one("x", {"c1": ["v1#2`"]}), ["v1#35;2#96;"])
+
+    def test_testo_normale_non_cambia(self):
+        self.assertEqual(self.render_one("fix: rotella 2/3 (ok)"),
+                         ["fix: rotella 2/3 (ok)"])
+
+
 class GitErrorTest(unittest.TestCase):
     def test_git_solleva_errore_tipizzato(self):
         with tempfile.TemporaryDirectory() as d:
@@ -248,6 +270,50 @@ class GitErrorTest(unittest.TestCase):
             with self.assertRaises(SystemExit) as cm:
                 gitgraph.main()
         self.assertEqual(cm.exception.code, "boom")
+
+
+class ReadGraphParsingTest(unittest.TestCase):
+    """P2-07: campi del log separati da SEP e ref senza unpacking fragile."""
+
+    S = "\x1f"  # gitgraph.SEP: il formato del log e' un contratto, non un dettaglio interno
+
+    def read(self, log, refs="tag v1 A1 A1\n"):
+        # ordine delle chiamate a git in read_graph(): worktree, log, tag, heads, remotes
+        with mock.patch.object(gitgraph, "git",
+                               side_effect=["true\n", log, refs,
+                                            "refs/heads/main a1 \n", ""]):
+            return gitgraph.read_graph(".", 10)
+
+    def test_subject_con_pipe_intatto(self):
+        commits, _, _, tips, _ = self.read(f"a1{self.S}A1{self.S}{self.S}fix | tabella\n")
+        self.assertEqual(commits["A1"], ([], "fix | tabella"))
+        self.assertEqual(tips, [("main", "a1")])
+
+    def test_campo_in_piu_resta_nel_subject(self):
+        # maxsplit: il resto del log e' soggetto, mai un ValueError da unpacking
+        commits = self.read(f"a1{self.S}A1{self.S}{self.S}a{self.S}b\n")[0]
+        self.assertEqual(commits["A1"], ([], f"a{self.S}b"))
+
+    def test_subject_con_separatore_di_riga_resta_una_sola_riga(self):
+        # splitlines() spezzava anche su \x0b: la coda senza SEP era un ValueError
+        commits = self.read(f"a1{self.S}A1{self.S}{self.S}prima\x0bdopo\n")[0]
+        self.assertEqual(commits, {"A1": ([], "prima\x0bdopo")})
+        self.assertEqual(gitgraph.label(commits["A1"][1]), "prima dopo")
+
+    def test_riga_troncata_e_un_errore_leggibile(self):
+        with self.assertRaisesRegex(gitgraph.GitError, "log git non interpretabile"):
+            self.read(f"a1{self.S}A1{self.S}\n")
+
+    def test_tag_con_spazio_e_un_errore_leggibile(self):
+        # git non crea un ref con spazio (check-ref-format): il formato si prova diretto
+        for refs in ("commit release 1.0 A1 A1\n", "commit release 1.0 A1 \n"):
+            with self.assertRaises(gitgraph.GitError) as cm:
+                self.read(f"a1{self.S}A1{self.S}{self.S}s\n", refs)
+            self.assertIn("tag non interpretabile", str(cm.exception))
+
+    def test_tag_annotato_mappato_sul_commit(self):
+        tags = self.read(f"a1{self.S}A1{self.S}{self.S}s\n")[2]
+        self.assertEqual(tags, {"A1": ["v1"]})
 
 
 class OutputPathTest(unittest.TestCase):

@@ -21,6 +21,7 @@ import sys
 import tempfile
 
 MAX_SUBJECT = 32
+SEP = "\x1f"  # separatore dei campi del log: '|' e' un carattere legittimo in un subject
 
 
 class GitError(RuntimeError):
@@ -40,17 +41,38 @@ def slug(branch):
     return re.sub(r"[^A-Za-z0-9_-]", "_", branch) or "branch"
 
 
-def label(text, limit=MAX_SUBJECT):
-    """Soggetto su una riga (spazi collassati, " -> '), troncato a `limit` DOPO la
-    normalizzazione, a confine di parola con ellissi (limit <= 0: intero).
+# In Mermaid '#' apre un'entita' numerica, '\\' e '`' hanno un significato proprio: dentro
+# una stringa tra doppi apici rompono il render con un errore che non nomina il commit.
+_MERMAID_ESCAPES = {'"': "'", "\\": "#92;", "#": "#35;", "`": "#96;"}
+
+
+def escape(text):
+    """Testo preso da git -> testo sicuro dentro una stringa Mermaid tra doppi apici.
+
+    I caratteri non stampabili (controlli, formati) non sono testo: diventano il glifo
+    di sostituzione, cosi' nessuno spezza il parser restando invisibile nel diagramma.
     """
-    text = " ".join(str(text).replace('"', "'").split())
+    out = []
+    for ch in str(text):
+        out.append(_MERMAID_ESCAPES.get(ch) or (ch if ch.isprintable() else "#65533;"))
+    return "".join(out)
+
+
+def label(text, limit=MAX_SUBJECT):
+    """Soggetto su una riga (spazi collassati, escape Mermaid), troncato a `limit` DOPO la
+    normalizzazione, a confine di parola con ellissi (limit <= 0: intero).
+
+    Unico punto di escaping: ogni testo di git finisce qui (via tag_of), mentre i nomi
+    ramo arrivano gia' ridotti a [A-Za-z0-9_-] da slug() e gli hash sono esadecimali.
+    `limit` conta i caratteri del soggetto: l'escape puo' allungare l'etichetta.
+    """
+    text = " ".join(str(text).split())
     if limit <= 0 or len(text) <= limit:
-        return text
+        return escape(text)
     cut = text[:limit - 1].rsplit(" ", 1)[0]
     if len(cut) * 2 < limit:  # confine di parola troppo vicino all'inizio: taglio duro
         cut = text[:limit - 1]
-    return cut + "…"
+    return escape(cut + "…")
 
 
 def branch_tips(repo):
@@ -151,12 +173,17 @@ def read_graph(repo, n, linear=False):
 
     # commit -> ([parents], subject), dal piu' recente al piu' vecchio
     log = git(repo, "log", "--all", "--topo-order", f"-n{n}",
-              "--pretty=format:%h|%H|%P|%s")
+              f"--pretty=format:%h{SEP}%H{SEP}%P{SEP}%s")
     short, commits = {}, {}
-    for line in log.splitlines():
-        h, _, rest = line.partition("|")
-        full, _, rest = rest.partition("|")
-        parents, _, subject = rest.partition("|")
+    # split("\n") e non splitlines(): git separa i commit con \n, mentre splitlines()
+    # spezza anche su \x0b, \x0c, \x85, U+2028 e simili, che possono stare in un subject
+    for line in log.split("\n"):
+        if not line:
+            continue
+        if line.count(SEP) < 3:
+            raise GitError(f"log git non interpretabile: {line!r}")
+        # maxsplit: un campo in piu' resta nel subject invece di rompere l'unpacking
+        h, full, parents, subject = line.split(SEP, 3)
         short[full] = h
         commits[full] = (parents.split(), subject)
     if not commits:
@@ -166,7 +193,12 @@ def read_graph(repo, n, linear=False):
     tags = {}
     for line in git(repo, "for-each-ref", "refs/tags",
                     "--format=%(objecttype) %(refname:short) %(objectname) %(*objectname)").splitlines():
-        kind, tag, obj, deref = line.split(" ")
+        # maxsplit: il nome di un ref non puo' contenere spazi (git check-ref-format),
+        # quindi uno spazio oltre il terzo campo e' un formato inatteso: dirlo, non perderlo
+        fields = line.split(" ", 3)
+        if len(fields) < 3 or (len(fields) == 4 and " " in fields[3]):
+            raise GitError(f"tag non interpretabile: {line!r}")
+        kind, tag, obj, deref = fields + [""] * (4 - len(fields))
         tags.setdefault(deref if kind == "tag" else obj, []).append(tag)
 
     if linear:
