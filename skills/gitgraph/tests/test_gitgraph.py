@@ -114,6 +114,72 @@ class RenderLaneTest(unittest.TestCase):
             ['warning: ramo "feature_x": "feature_x" occupato, uso "feature_x_2"\n'])
 
 
+class SettleTest(unittest.TestCase):
+    """P1-03: un solo worklist; `deferred` e' un set che settle() prosciuga."""
+
+    COMMITS = {
+        "N": (["M"], "n"),
+        "M": (["B", "X"], "merge f"),   # secondo genitore non piu' testa della lane f
+        "Y": (["X"], "y"),
+        "X": (["B"], "x"),
+        "B": (["A"], "b"),
+        "A": ([], "a"),
+    }
+
+    def test_merge_differito_ripreso_da_settle(self):
+        g = gitgraph.Graph(self.COMMITS, {h: h.lower() for h in self.COMMITS}, {},
+                           warn=self.fail)
+        g.claim([("main", "N"), ("f", "Y")])
+        g.header(g.uname(g.start_branch))
+        g.walk(g.start, g.start_branch)
+        self.assertEqual(g.deferred, {"M"})  # walk lo rimanda: heads[f] e' Y, non X
+        g.settle()  # invariante: ogni giro aggiunge a finished, quindi termina
+        self.assertEqual(g.deferred, set())
+        self.assertEqual(g.finished, set(self.COMMITS))
+
+    def test_report_lost_conteggio_derivato_da_finished(self):
+        commits = {"C": (["B"], "c"), "B": (["A"], "b"), "A": ([], "a")}
+        warnings = []
+        g = gitgraph.Graph(commits, {h: h.lower() for h in commits}, {},
+                           warn=warnings.append)
+        g.claim([])
+        g.header("main")
+        g.finished.add("A")  # scenario: catena camminata solo in parte
+        g.report_lost()
+        self.assertEqual(warnings, ["warning: 2 commit fuori dalle catene principali\n"])
+        self.assertEqual([line for line in g.out if ' id: "' in line],
+                         ['    commit id: "b" tag: "b"',
+                          '    commit id: "c" tag: "c"'])
+
+    def test_genitore_duplicato_non_lascia_warning_falso(self):
+        # caso non creabile da git normale (solo via .git/info/grafts), dichiarato
+        # nel docstring di settle(): il set deduplica, il vecchio falso warning sparisce
+        commits = {"c00": (["c02", "c02"], "0"),
+                   "c01": (["c02"], "1"),
+                   "c02": (["out2"], "2")}
+        warnings = []
+        g = gitgraph.Graph(commits, {h: h for h in commits}, {},
+                           warn=warnings.append)
+        g.claim([("side", "c01"), ("main", "c01")])
+        g.header(g.uname(g.start_branch))
+        g.walk(g.start, g.start_branch)
+        g.settle()
+        g.report_lost()
+        self.assertEqual(g.deferred, set())
+        self.assertEqual(warnings, [])
+
+    def test_report_lost_non_negativo_se_finished_esce_da_commits(self):
+        commits = {"C": (["B"], "c"), "B": (["A"], "b"), "A": ([], "a")}
+        warnings = []
+        g = gitgraph.Graph(commits, {h: h.lower() for h in commits}, {},
+                           warn=warnings.append)
+        g.claim([])
+        g.header("main")
+        g.finished.update(set(commits) | {"fuori"})  # hash non in commits
+        g.report_lost()
+        self.assertEqual(warnings, [])
+
+
 class RenderLabelTest(unittest.TestCase):
     SUBJECT = "feat: configurazione molto lunga delle etichette nei diagrammi"
 

@@ -207,7 +207,7 @@ class Graph:
             for p in parents:
                 if p in commits:
                     self.children.setdefault(p, []).append(h)
-        self.heads, self.finished, self.deferred = {}, set(), []
+        self.heads, self.finished, self.deferred = {}, set(), set()
         self.state = {"cur": None, "made": set()}
         self.start = self.start_branch = ""
 
@@ -312,7 +312,7 @@ class Graph:
             if len(par) > 1 and self.heads.get(self.owner.get(par[1])) != par[1]:
                 self.switch(cb)   # lane creata al fork point, poi si torna indietro
                 self.switch(branch)
-                self.deferred.append(c)
+                self.deferred.add(c)
                 continue
             self.switch(cb)
             self.walk(c, cb)
@@ -322,28 +322,45 @@ class Graph:
         return h not in self.finished and all(p in self.finished for p in self.parents_of(h))
 
     def settle(self):
-        """Componenti staccate (finestra troncata) e merge sbloccati, in un secondo giro."""
+        """Unico worklist: riprende i commit sbloccati finche' ne restano; `deferred`
+        e' solo il set dei merge mai ricostruiti (diagnostica, dedup gratuito).
+
+        Terminazione: il primo `h` di `todo` e' ancora `ready` (nessuna mutazione tra
+        la list comprehension e il loop), quindi `walk` lo marca in `finished`: ogni
+        giro cresce `len(finished)` di almeno 1 (i successivi possono essere gia'
+        finiti dal `walk` ricorsivo). `finished` e' monotono e limitato da
+        `len(commits)`, quindi il ciclo esce sempre, anche su input degenere.
+
+        Cambio dichiarato rispetto alla lista: il set deduplica, quindi un commit con
+        lo stesso genitore ripetuto (es. `c00 -> c02, c02`, che finisce due volte in
+        `children[c02]` e veniva accodato due volte, con una sola `remove`) non lascia
+        piu' un falso "warning: N merge non ricostruiti". Caso non creabile con git
+        normale (`commit-tree` scarta i parent duplicati): raggiungibile solo via
+        `.git/info/grafts`; stdout invariato.
+        """
         while True:
             todo = [h for h in reversed(list(self.commits)) if self.ready(h)]
             if not todo:
-                break
+                return
             for h in todo:
-                if not self.ready(h):
+                if not self.ready(h):  # finito nel frattempo dal walk ricorsivo
                     continue
-                if h in self.deferred:
-                    self.deferred.remove(h)
+                self.deferred.discard(h)
                 cb = self.owner.get(h, self.start_branch)
                 self.switch(cb)
                 self.walk(h, cb)
 
     def report_lost(self):
         """Reti di sicurezza: nulla sparisce in silenzio, i buchi diventano warning."""
-        lost = [h for h in reversed(list(self.commits)) if h not in self.finished]
+        # conteggio derivato: nella CLI finished e' sottoinsieme di commits, il max(0, ...)
+        # copre un chiamante che inietta hash estranei (nessun conteggio negativo)
+        lost = max(0, len(self.commits) - len(self.finished))
         if lost:
-            self.say(f"warning: {len(lost)} commit fuori dalle catene principali\n")
+            self.say(f"warning: {lost} commit fuori dalle catene principali\n")
             self.switch(self.start_branch)
-            for h in lost:
-                self.commit_line(h)
+            for h in reversed(list(self.commits)):
+                if h not in self.finished:
+                    self.commit_line(h)
         if self.deferred:
             self.say(f"warning: {len(self.deferred)} merge non ricostruiti\n")
         # un checkout finale non disegna nulla
