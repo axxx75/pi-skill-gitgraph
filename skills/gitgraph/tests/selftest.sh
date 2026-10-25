@@ -128,5 +128,11 @@ else
   echo "SKIP: mmdc assente, test PNG non eseguito"
 fi
 
+# unit test della logica pura (render) e degli errori tipizzati
+if ! python3 -m unittest discover -s "$here/tests" -p 'test_*.py' -q \
+     >"$tmp/unit.log" 2>&1; then
+  echo "FAIL: unit test"; cat "$tmp/unit.log"; fail=1
+fi
+
 [ "$fail" -eq 0 ] && echo "OK"
 exit "$fail"

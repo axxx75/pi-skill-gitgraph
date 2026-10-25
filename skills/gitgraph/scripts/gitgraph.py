@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Storia git -> Mermaid gitGraph (stdout, da incollare su https://mermaid.live)."""
 
+from __future__ import annotations
+
 import argparse
 import glob
 import json
@@ -14,11 +16,15 @@ import tempfile
 MAX_SUBJECT = 32
 
 
+class GitError(RuntimeError):
+    """Errore fatale (git o input): main() lo traduce in sys.exit, il chiamante lo cattura."""
+
+
 def git(repo, *args, strict=True):
     r = subprocess.run(["git", "-C", repo, *args],
                        capture_output=True, text=True, encoding="utf-8")
     if r.returncode != 0 and strict:
-        sys.exit(f"git {' '.join(args)}: {r.stderr.strip()}")
+        raise GitError(f"git {' '.join(args)}: {r.stderr.strip()}")
     return r.stdout
 
 
@@ -97,27 +103,13 @@ def render_png(mermaid, out, size=1600):
             sys.exit(f"mmdc fallito: {r.stderr.strip() or r.stdout.strip()}")
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("repo", nargs="?", default=".", help="path del repository")
-    ap.add_argument("-n", type=int, default=30, help="numero massimo di commit (default 30)")
-    ap.add_argument("-o", metavar="FILE", help="scrive su file invece che su stdout")
-    ap.add_argument("--png", metavar="FILE",
-                    help="renderizza un PNG con mmdc (chromium gia' presente, nessun download)")
-    ap.add_argument("--md", action="store_true",
-                    help="avvolge l'output in un fence ```mermaid (file .md per la preview)")
-    ap.add_argument("--linear", action="store_true",
-                    help="fila indiana: un solo ramo, nessuna ricostruzione dei merge")
-    ap.add_argument("--label-len", type=int, default=MAX_SUBJECT,
-                    help="caratteri massimi per etichetta, troncata a confine di parola "
-                         "(default 32, 0 = soggetto intero)")
-    a = ap.parse_args()
-
-    if git(a.repo, "rev-parse", "--is-inside-work-tree").strip() != "true":
-        sys.exit(f"{a.repo}: non e' un repository git")
+def read_graph(repo, n, linear=False):
+    """Legge da git i dati che render() consuma: unica porta verso git del modulo."""
+    if git(repo, "rev-parse", "--is-inside-work-tree").strip() != "true":
+        raise GitError(f"{repo}: non e' un repository git")
 
     # commit -> ([parents], subject), dal piu' recente al piu' vecchio
-    log = git(a.repo, "log", "--all", "--topo-order", f"-n{a.n}",
+    log = git(repo, "log", "--all", "--topo-order", f"-n{n}",
               "--pretty=format:%h|%H|%P|%s")
     short, commits = {}, {}
     for line in log.splitlines():
@@ -127,15 +119,26 @@ def main():
         short[full] = h
         commits[full] = (parents.split(), subject)
     if not commits:
-        sys.exit("nessun commit trovato")
+        raise GitError("nessun commit trovato")
 
     # tag git reali (annotati e leggeri): commit -> nomi tag
     tags = {}
-    for line in git(a.repo, "for-each-ref", "refs/tags",
+    for line in git(repo, "for-each-ref", "refs/tags",
                     "--format=%(objecttype) %(refname:short) %(objectname) %(*objectname)").splitlines():
         kind, tag, obj, deref = line.split(" ")
         tags.setdefault(deref if kind == "tag" else obj, []).append(tag)
 
+    if linear:
+        # HEAD puo' non risolvere (ref puntato ma mai committato): non e' fatale
+        return commits, short, tags, [], git(
+            repo, "rev-parse", "--abbrev-ref", "HEAD", strict=False).strip()
+    return commits, short, tags, branch_tips(repo), ""
+
+
+def render(commits, short, tags, tips, linear=False, label_len=MAX_SUBJECT,
+           head="", warn=None) -> list[str]:
+    """commits/short/tags/tips gia' letti da git -> righe Mermaid (nessun I/O)."""
+    say = warn or (lambda _msg: None)
     out = []
 
     def emit(line):
@@ -144,9 +147,9 @@ def main():
     def tag_of(h, fallback):
         """Primo tag, mai spezzato: i tag in piu' diventano "+N"; subject troncato se non c'e' tag."""
         if h not in tags:
-            return label(fallback, a.label_len)
-        head = label(tags[h][0], a.label_len)
-        return f"{head} +{len(tags[h]) - 1}" if len(tags[h]) > 1 else head
+            return label(fallback, label_len)
+        first = label(tags[h][0], label_len)
+        return f"{first} +{len(tags[h]) - 1}" if len(tags[h]) > 1 else first
 
     def commit_line(h):
         emit(f'commit id: "{short[h]}" tag: "{tag_of(h, commits[h][1])}"')
@@ -156,16 +159,13 @@ def main():
                    + branch_name + '"}}}%%')
         out.append("gitGraph")
 
-    if a.linear:
+    if linear:
         # ordine parents-first, senza rami: il nome serve solo all'etichetta del ramo
-        # HEAD puo' non risolvere (ref puntato ma mai committato): non e' fatale
-        head = git(a.repo, "rev-parse", "--abbrev-ref", "HEAD", strict=False).strip()
         header(slug("main" if head in ("", "HEAD") else head))
         for h in reversed(list(commits)):
             commit_line(h)
     else:
         owner = {}  # commit -> ramo che lo rivendica
-        tips = branch_tips(a.repo)
         names, taken = {}, set()  # unica mappa raw -> nome Mermaid (nessuna collisione)
 
         def uname(branch):
@@ -177,16 +177,19 @@ def main():
                     i += 1
                     cand = f"{base}_{i}"
                 if cand != base:
-                    sys.stderr.write(
-                        f'warning: ramo "{branch}": "{base}" occupato, uso "{cand}"\n')
+                    say(f'warning: ramo "{branch}": "{base}" occupato, uso "{cand}"\n')
                 names[branch] = cand
                 taken.add(cand)
             return names[branch]
 
         for ref, sha in tips:
             uname(ref)  # la frontiera rivendica i nomi per prima (main/master in testa)
-            for h in git(a.repo, "rev-list", "--first-parent", f"-n{a.n}", sha).split():
-                owner.setdefault(h, ref)
+            # catena first-parent in-finestra: con --topo-order un genitore fuori da
+            # commits ha tutti gli antenati fuori, quindi si chiude come faceva rev-list
+            while sha in commits:
+                owner.setdefault(sha, ref)
+                par = commits[sha][0]
+                sha = par[0] if par else None
 
         children = {}
         for h, (parents, _) in commits.items():
@@ -282,15 +285,42 @@ def main():
         # reti di sicurezza: nulla sparisce in silenzio
         lost = [h for h in reversed(list(commits)) if h not in finished]
         if lost:
-            sys.stderr.write(f"warning: {len(lost)} commit fuori dalle catene principali\n")
+            say(f"warning: {len(lost)} commit fuori dalle catene principali\n")
             switch(start_branch)
             for h in lost:
                 commit_line(h)
         if deferred:
-            sys.stderr.write(f"warning: {len(deferred)} merge non ricostruiti\n")
+            say(f"warning: {len(deferred)} merge non ricostruiti\n")
         # un checkout finale non disegna nulla
         while out and out[-1].strip().startswith("checkout "):
             out.pop()
+
+    return out
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("repo", nargs="?", default=".", help="path del repository")
+    ap.add_argument("-n", type=int, default=30, help="numero massimo di commit (default 30)")
+    ap.add_argument("-o", metavar="FILE", help="scrive su file invece che su stdout")
+    ap.add_argument("--png", metavar="FILE",
+                    help="renderizza un PNG con mmdc (chromium gia' presente, nessun download)")
+    ap.add_argument("--md", action="store_true",
+                    help="avvolge l'output in un fence ```mermaid (file .md per la preview)")
+    ap.add_argument("--linear", action="store_true",
+                    help="fila indiana: un solo ramo, nessuna ricostruzione dei merge")
+    ap.add_argument("--label-len", type=int, default=MAX_SUBJECT,
+                    help="caratteri massimi per etichetta, troncata a confine di parola "
+                         "(default 32, 0 = soggetto intero)")
+    a = ap.parse_args()
+
+    try:
+        commits, short, tags, tips, head = read_graph(a.repo, a.n, a.linear)
+        out = render(commits, short, tags, tips, linear=a.linear,
+                     label_len=a.label_len, head=head,
+                     warn=lambda msg: sys.stderr.write(msg))
+    except GitError as e:
+        sys.exit(str(e))
 
     text = "\n".join(out) + "\n"
     if a.png:
