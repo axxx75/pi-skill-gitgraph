@@ -272,6 +272,40 @@ class GitErrorTest(unittest.TestCase):
         self.assertEqual(cm.exception.code, "boom")
 
 
+class ReadGraphParsingTest(unittest.TestCase):
+    """P2-07: campi del log separati da SEP e ref senza unpacking fragile."""
+
+    S = "\x1f"  # gitgraph.SEP: il formato del log e' un contratto, non un dettaglio interno
+
+    def read(self, log, refs="tag v1 A1 A1\n"):
+        # ordine delle chiamate a git in read_graph(): worktree, log, tag, heads, remotes
+        with mock.patch.object(gitgraph, "git",
+                               side_effect=["true\n", log, refs,
+                                            "refs/heads/main a1 \n", ""]):
+            return gitgraph.read_graph(".", 10)
+
+    def test_subject_con_pipe_intatto(self):
+        commits, _, _, tips, _ = self.read(f"a1{self.S}A1{self.S}{self.S}fix | tabella\n")
+        self.assertEqual(commits["A1"], ([], "fix | tabella"))
+        self.assertEqual(tips, [("main", "a1")])
+
+    def test_campo_in_piu_resta_nel_subject(self):
+        # maxsplit: il resto del log e' soggetto, mai un ValueError da unpacking
+        commits = self.read(f"a1{self.S}A1{self.S}{self.S}a{self.S}b\n")[0]
+        self.assertEqual(commits["A1"], ([], f"a{self.S}b"))
+
+    def test_tag_con_spazio_e_un_errore_leggibile(self):
+        # git non crea un ref con spazio (check-ref-format): il formato si prova diretto
+        for refs in ("commit release 1.0 A1 A1\n", "commit release 1.0 A1 \n"):
+            with self.assertRaises(gitgraph.GitError) as cm:
+                self.read(f"a1{self.S}A1{self.S}{self.S}s\n", refs)
+            self.assertIn("tag non interpretabile", str(cm.exception))
+
+    def test_tag_annotato_mappato_sul_commit(self):
+        tags = self.read(f"a1{self.S}A1{self.S}{self.S}s\n")[2]
+        self.assertEqual(tags, {"A1": ["v1"]})
+
+
 class OutputPathTest(unittest.TestCase):
     """P1-06: path di uscita invalido -> una riga su stderr ed exit 1; scrittura atomica."""
 

@@ -21,6 +21,7 @@ import sys
 import tempfile
 
 MAX_SUBJECT = 32
+SEP = "\x1f"  # separatore dei campi del log: '|' e' un carattere legittimo in un subject
 
 
 class GitError(RuntimeError):
@@ -172,12 +173,11 @@ def read_graph(repo, n, linear=False):
 
     # commit -> ([parents], subject), dal piu' recente al piu' vecchio
     log = git(repo, "log", "--all", "--topo-order", f"-n{n}",
-              "--pretty=format:%h|%H|%P|%s")
+              f"--pretty=format:%h{SEP}%H{SEP}%P{SEP}%s")
     short, commits = {}, {}
     for line in log.splitlines():
-        h, _, rest = line.partition("|")
-        full, _, rest = rest.partition("|")
-        parents, _, subject = rest.partition("|")
+        # maxsplit: un campo in piu' resta nel subject invece di rompere l'unpacking
+        h, full, parents, subject = line.split(SEP, 3)
         short[full] = h
         commits[full] = (parents.split(), subject)
     if not commits:
@@ -187,7 +187,12 @@ def read_graph(repo, n, linear=False):
     tags = {}
     for line in git(repo, "for-each-ref", "refs/tags",
                     "--format=%(objecttype) %(refname:short) %(objectname) %(*objectname)").splitlines():
-        kind, tag, obj, deref = line.split(" ")
+        # maxsplit: il nome di un ref non puo' contenere spazi (git check-ref-format),
+        # quindi uno spazio oltre il terzo campo e' un formato inatteso: dirlo, non perderlo
+        fields = line.split(" ", 3)
+        if len(fields) < 3 or (len(fields) == 4 and " " in fields[3]):
+            raise GitError(f"tag non interpretabile: {line!r}")
+        kind, tag, obj, deref = fields + [""] * (4 - len(fields))
         tags.setdefault(deref if kind == "tag" else obj, []).append(tag)
 
     if linear:
