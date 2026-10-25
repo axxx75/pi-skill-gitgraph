@@ -39,8 +39,19 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   ripetuto in README. Nuovo `.gitattributes`
   (`skills/gitgraph/assets/example.png binary`) e README che dichiara l'esempio un'**illustrazione,
   non un golden file**, con la ricetta esatta (mmdc 12.0.0 e Chromium non registrato).
+- P2-02: Chromium gira **con la sandbox attiva**; `--no-sandbox --disable-setuid-sandbox` passano
+  solo con `GITGRAPH_NO_SANDBOX=1` (unico nome, nessun alias), il ripiego per container/root senza
+  user namespace. Motivazione e verifica in `references/png-setup.md` §3; il nome della variabile è
+  contratto utente: non si cambia senza una release.
 
 ### Note
+
+- **Sandbox attiva di default (P2-02).** Cambia il render solo in un punto: senza
+  `GITGRAPH_NO_SANDBOX=1` il `puppeteer.json` non contiene più `--no-sandbox
+  --disable-setuid-sandbox`. Verificato in questo ambiente (WSL2, utente non root): il render
+  funziona con la sandbox attiva e i processi `--type=renderer` girano in un user namespace
+  separato; con la variabile impostata il render passa dai flag espliciti. L'asset non cambia
+  (stessi pixel: il flag non tocca il layout).
 
 - **Doc, non codice (P2-14).** Nessuna modifica di comportamento: la precedenza dei flag del
   README/SKILL è già stata riscritta in P2-04 (rifiuto di `--png` con `-o`/`--md`), qui si

@@ -35,7 +35,40 @@ Ordine di risoluzione usato da `scripts/gitgraph.py`:
 Se nessuno esiste, lo script esce con `chromium non trovato: imposta PUPPETEER_EXECUTABLE_PATH`.
 Nessun download automatico: la scelta è deliberata (niente ~150 MB e niente pacchetti non voluti).
 
-## 3. Diagnosi rapida
+## 3. Sandbox Chromium: attiva di default
+
+Il render lancia Chromium **con la sandbox attiva**. `--no-sandbox` è un ripiego dietro un gate
+esplicito, non il default:
+
+```bash
+GITGRAPH_NO_SANDBOX=1 python3 scripts/gitgraph.py <repo> --png grafo.png
+```
+
+`GITGRAPH_NO_SANDBOX=1` è l'unico nome (nessun alias) ed è **contratto utente**: passare a
+Chromium `--no-sandbox --disable-setuid-sandbox`. Qualunque altro valore (compreso vuoto)
+lascia la sandbox attiva.
+
+Perché: il diagramma contiene testo preso dal repository (subject dei commit, nomi di rami e
+tag), quindi in un repo clonato da terzi o in una PR da fork è contenuto influenzabile
+dall'esterno. Senza sandbox un bug del renderer (font/SVG/layout, la classe di 0-day tipica di
+Chromium) diventa esecuzione di codice con i privilegi dell'utente. Il flag serve solo dove la
+sandbox non può partire: container/root senza user namespace
+(`/proc/sys/kernel/unprivileged_userns_clone` o `/proc/sys/user/max_user_namespaces` a 0).
+
+Verifica che la sandbox sia davvero attiva: durante il render i processi `--type=renderer` di
+Chromium girano in un user namespace separato da quello della shell:
+
+```bash
+readlink /proc/self/ns/user                       # es. user:[4026531837]
+readlink /proc/<pid renderer>/ns/user             # deve essere un namespace diverso
+```
+
+Su WSL2 con utente non root la sandbox funziona (verificato con Chromium 155 e mmdc 12.0.0):
+il render di default resta quindi quello sandboxato, e la variabile va usata solo se il render
+fallisce con un errore di sandbox. In CI il job `png` la imposta perché il runner ubuntu-latest
+limita lo user namespace di Chromium.
+
+## 4. Diagnosi rapida
 
 ```bash
 mmdc --version
@@ -47,6 +80,6 @@ echo "${PUPPETEER_EXECUTABLE_PATH:-'(non impostata)'}"
 Errore `mmdc fallito: ...` → quasi sempre Chromium sbagliato o assente: imposta
 `PUPPETEER_EXECUTABLE_PATH` e riprova.
 
-## 4. Percorsi con spazi o repo remoti
+## 5. Percorsi con spazi o repo remoti
 
 `--png` scrive dove gli dici: usa un path assoluto e verifica che la directory esista.

@@ -45,6 +45,12 @@ CHROME_PATTERNS = (
     "/usr/bin/google-chrome",
 )
 
+# Sandbox Chromium: attiva di default. Il gate esplicito (unica variabile, contratto
+# utente) la disattiva solo dove il sandbox non parte (container/root senza user
+# namespace). Motivazione e diagnosi: references/png-setup.md §3.
+NO_SANDBOX_ENV = "GITGRAPH_NO_SANDBOX"
+NO_SANDBOX_ARGS = ("--no-sandbox", "--disable-setuid-sandbox")
+
 
 class GitError(RuntimeError):
     """Errore fatale (git o input): main() lo traduce in sys.exit, il chiamante lo cattura."""
@@ -136,8 +142,9 @@ def chrome_bin():
 def render_png(mermaid, out):
     """Mermaid -> PNG via mmdc; esce con una riga se mmdc o Chromium mancano.
 
-    --no-sandbox nel puppeteer.json: il Chromium locale gira in container/CI dove il
-    sandbox non ha namespace utente; l'input e' l'.mmd scritto qui, non HTML esterno.
+    Sandbox Chromium attiva: il diagramma contiene subject e nomi ramo presi dal repo,
+    quindi in un repo di terzi e' input influenzabile dall'esterno; GITGRAPH_NO_SANDBOX=1
+    e' il ripiego esplicito per container/root senza user namespace (png-setup.md §3).
     """
     mmdc = shutil.which("mmdc")
     if not mmdc:
@@ -149,9 +156,9 @@ def render_png(mermaid, out):
         src, cfg = os.path.join(tmp, "in.mmd"), os.path.join(tmp, "puppeteer.json")
         with open(src, "w", encoding="utf-8") as f:
             f.write(mermaid)
+        args = list(NO_SANDBOX_ARGS) if os.environ.get(NO_SANDBOX_ENV) == "1" else []
         with open(cfg, "w", encoding="utf-8") as f:
-            json.dump({"executablePath": chrome,
-                       "args": ["--no-sandbox", "--disable-setuid-sandbox"]}, f)
+            json.dump({"executablePath": chrome, "args": args}, f)
         r = subprocess.run([mmdc, "-i", src, "-o", out, "-p", cfg,
                             "--size", str(PNG_SIZE), "-b", "white", "-q"],
                            capture_output=True, text=True)

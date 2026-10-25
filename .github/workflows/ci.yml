@@ -45,6 +45,11 @@ jobs:
   png:
     name: png render (mmdc 12.0.0 + Chromium)
     runs-on: ubuntu-latest
+    env:
+      # Il runner ubuntu-latest limita lo user namespace (AppArmor su 24.04): la sandbox
+      # di Chromium non parte li'. Gate esplicito e documentato in
+      # references/png-setup.md §3; in locale il default resta sandboxato.
+      GITGRAPH_NO_SANDBOX: '1'
     steps:
       - uses: actions/checkout@v4
         with:

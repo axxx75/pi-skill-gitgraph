@@ -8,6 +8,7 @@ non dipendono da git ne' dal filesystem (unica eccezione: il caso GitError).
 
 import contextlib
 import io
+import json
 import os
 import sys
 import tempfile
@@ -551,6 +552,38 @@ class OutputPathTest(unittest.TestCase):
             with open(path, encoding="utf-8") as f:
                 self.assertEqual(f.read(), "vecchio\n")
             self.assertFalse(os.path.exists(path + ".tmp"))
+
+
+class SandboxGateTest(unittest.TestCase):
+    """P2-02: sandbox Chromium attiva di default; GITGRAPH_NO_SANDBOX=1 e' l'unico gate."""
+
+    def render(self, env_value):
+        captured = {}
+
+        def fake_run(argv, **kwargs):
+            with open(argv[argv.index("-p") + 1], encoding="utf-8") as f:
+                captured["config"] = json.load(f)
+            with open(argv[argv.index("-o") + 1], "w", encoding="utf-8") as f:
+                f.write("png")
+            return gitgraph.subprocess.CompletedProcess(argv, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.dict(os.environ, {gitgraph.NO_SANDBOX_ENV: env_value}), \
+                mock.patch.object(gitgraph.shutil, "which", return_value="/finto/mmdc"), \
+                mock.patch.object(gitgraph, "chrome_bin", return_value="/finto/chrome"), \
+                mock.patch.object(gitgraph.subprocess, "run", side_effect=fake_run):
+            gitgraph.render_png("gitGraph\n", os.path.join(d, "out.png"))
+        return captured["config"]
+
+    def test_sandbox_attiva_di_default(self):
+        for value in ("", "0", "true"):
+            with self.subTest(value=value):
+                self.assertEqual(self.render(value)["args"], [])
+
+    def test_flag_esplicito_disattiva_la_sandbox(self):
+        config = self.render("1")
+        self.assertEqual(config["args"], ["--no-sandbox", "--disable-setuid-sandbox"])
+        self.assertEqual(config["executablePath"], "/finto/chrome")
 
 
 if __name__ == "__main__":

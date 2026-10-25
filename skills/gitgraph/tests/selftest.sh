@@ -259,6 +259,10 @@ if command -v mmdc >/dev/null; then
   python3 "$here/scripts/gitgraph.py" . --png "$tmp/out.png" 2>/dev/null \
     || { echo "FAIL: --png exit non-zero"; exit 1; }
   [ -s "$tmp/out.png" ] || { echo "FAIL: --png non produce il file"; fail=1; }
+  # P2-02: sandbox attiva di default (il render sopra); GITGRAPH_NO_SANDBOX=1 e' il gate
+  GITGRAPH_NO_SANDBOX=1 python3 "$here/scripts/gitgraph.py" . --png "$tmp/nosandbox.png" 2>/dev/null \
+    || { echo "FAIL: --png con GITGRAPH_NO_SANDBOX=1, exit non-zero"; exit 1; }
+  [ -s "$tmp/nosandbox.png" ] || { echo "FAIL: GITGRAPH_NO_SANDBOX=1 non produce il file"; fail=1; }
   # il path invalido deve dirlo subito, non travestirsi da "mmdc fallito"
   err=$(python3 "$here/scripts/gitgraph.py" . --png "$tmp/manca/out.png" 2>&1 >/dev/null) \
     && rc=0 || rc=$?

@@ -90,6 +90,9 @@ lo dice su `stderr` proseguendo col render: è un avviso, non un fallimento.
 
 Chromium: la skill riusa quello che trova (browser-tools di pi, cache puppeteer/playwright,
 chromium di sistema) oppure quello indicato da `PUPPETEER_EXECUTABLE_PATH`.
+Il render gira con la **sandbox attiva**; se l'ambiente non la permette (container/root senza user
+namespace) il ripiego esplicito è `GITGRAPH_NO_SANDBOX=1` (motivazione e verifica:
+[`skills/gitgraph/references/png-setup.md`](skills/gitgraph/references/png-setup.md) §3).
 Dettagli e diagnosi: [`skills/gitgraph/references/png-setup.md`](skills/gitgraph/references/png-setup.md).
 
 ## Verify
@@ -133,7 +136,10 @@ grafo giusto».
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) gira su push di `main`, sui tag `v*` e sulle
 pull request: `selftest.sh` + `py_compile` su Python 3.8 e 3.12, un job `png` (mmdc 12.0.0 + Chromium,
-dove lo `SKIP` non è ammesso), e `gitleaks` su tutta la storia. Lo stesso gate in locale, senza runner:
+dove lo `SKIP` non è ammesso) e `gitleaks` su tutta la storia. Il job `png` imposta
+`GITGRAPH_NO_SANDBOX=1`: il runner ubuntu-latest limita lo user namespace di Chromium, quindi lì il
+gate esplicito è la configurazione corretta (il render sandboxato è quello locale). Lo stesso gate
+in locale, senza runner:
 
 ```bash
 bash skills/gitgraph/tests/selftest.sh          # locale: --png può finire in SKIP se manca mmdc
@@ -214,6 +220,7 @@ Casi **risolti** — comportamento definitivo, non più limiti:
 | `mmdc non trovato` | `mmdc` non nel `PATH` | vedi §Install: symlink in `~/bin` o `PATH` che include `~/.local/bin` |
 | `chromium non trovato` | nessun Chromium nei percorsi noti | `export PUPPETEER_EXECUTABLE_PATH=/path/al/chrome` |
 | `mmdc fallito: ...` | Chromium incompatibile o `--size` assente (major vecchia) | verifica `mmdc --version` e `mmdc --help` |
+| `mmdc fallito: ...` con errore di sandbox | container/root senza user namespace | `GITGRAPH_NO_SANDBOX=1` (ripiego esplicito, vedi `png-setup.md` §3) |
 | `non e' un repository git` | path sbagliato, non un repo, un bare repo o una sottodirectory senza worktree | passa la radice del repo (con `.git`): un bare repo non ha una storia da disegnare |
 | Grafo "a fila indiana" | finestra `-n` troppo piccola, merge fuori | `-n` più alto, o `--linear` se vuoi davvero la fila |
 | Etichette che si sovrappongono / si tagliano nel PNG | spaziatura fissa di Mermaid gitGraph (~40 unità per commit), non configurabile | `--label-len` contenuto (10-12) o `-n` ridotto; il PNG già renderizzato non è modificabile dallo script |
