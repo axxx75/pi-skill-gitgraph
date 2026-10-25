@@ -217,6 +217,28 @@ class RenderLabelTest(unittest.TestCase):
         self.assertEqual(out[2], '    commit id: "a1" tag: "fix \'rotto\' qui"')
 
 
+class EscapeTest(unittest.TestCase):
+    """P2-01: un solo punto di escaping; '#'/backslash/backtick/controlli non rompono il render."""
+
+    def tags_of(self, out):
+        return [line.partition(' tag: "')[2].rstrip('"') for line in out if ' tag: "' in line]
+
+    def render_one(self, subject, tags=None):
+        return self.tags_of(gitgraph.render({"c1": ([], subject)}, {"c1": "a1"},
+                                            tags or {}, [], linear=True, head="main"))
+
+    def test_metacaratteri_e_controlli_nel_subject(self):
+        self.assertEqual(self.render_one('foo"bar\\baz\x01 qux'),
+                         ["foo'bar#92;baz#65533; qux"])
+
+    def test_hash_e_backtick_nel_nome_tag(self):
+        self.assertEqual(self.render_one("x", {"c1": ["v1#2`"]}), ["v1#35;2#96;"])
+
+    def test_testo_normale_non_cambia(self):
+        self.assertEqual(self.render_one("fix: rotella 2/3 (ok)"),
+                         ["fix: rotella 2/3 (ok)"])
+
+
 class GitErrorTest(unittest.TestCase):
     def test_git_solleva_errore_tipizzato(self):
         with tempfile.TemporaryDirectory() as d:

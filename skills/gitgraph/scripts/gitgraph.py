@@ -40,17 +40,38 @@ def slug(branch):
     return re.sub(r"[^A-Za-z0-9_-]", "_", branch) or "branch"
 
 
-def label(text, limit=MAX_SUBJECT):
-    """Soggetto su una riga (spazi collassati, " -> '), troncato a `limit` DOPO la
-    normalizzazione, a confine di parola con ellissi (limit <= 0: intero).
+# In Mermaid '#' apre un'entita' numerica, '\\' e '`' hanno un significato proprio: dentro
+# una stringa tra doppi apici rompono il render con un errore che non nomina il commit.
+_MERMAID_ESCAPES = {'"': "'", "\\": "#92;", "#": "#35;", "`": "#96;"}
+
+
+def escape(text):
+    """Testo preso da git -> testo sicuro dentro una stringa Mermaid tra doppi apici.
+
+    I caratteri non stampabili (controlli, formati) non sono testo: diventano il glifo
+    di sostituzione, cosi' nessuno spezza il parser restando invisibile nel diagramma.
     """
-    text = " ".join(str(text).replace('"', "'").split())
+    out = []
+    for ch in str(text):
+        out.append(_MERMAID_ESCAPES.get(ch) or (ch if ch.isprintable() else "#65533;"))
+    return "".join(out)
+
+
+def label(text, limit=MAX_SUBJECT):
+    """Soggetto su una riga (spazi collassati, escape Mermaid), troncato a `limit` DOPO la
+    normalizzazione, a confine di parola con ellissi (limit <= 0: intero).
+
+    Unico punto di escaping: ogni testo di git finisce qui (via tag_of), mentre i nomi
+    ramo arrivano gia' ridotti a [A-Za-z0-9_-] da slug() e gli hash sono esadecimali.
+    `limit` conta i caratteri del soggetto: l'escape puo' allungare l'etichetta.
+    """
+    text = " ".join(str(text).split())
     if limit <= 0 or len(text) <= limit:
-        return text
+        return escape(text)
     cut = text[:limit - 1].rsplit(" ", 1)[0]
     if len(cut) * 2 < limit:  # confine di parola troppo vicino all'inizio: taglio duro
         cut = text[:limit - 1]
-    return cut + "…"
+    return escape(cut + "…")
 
 
 def branch_tips(repo):

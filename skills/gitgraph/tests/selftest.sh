@@ -131,6 +131,21 @@ if "add-idempotency" not in s:
     sys.exit(f"FAIL: caratteri distintivi persi: {s!r}")
 PY
 
+# escaping Mermaid: '#', '\', backtick e caratteri di controllo non rompono la stringa
+# "…" (appsec CWE-116/CWE-79, ux-perf finding 4: senza escape il render e' corrotto)
+esc="$tmp/esc"; git init -q -b main "$esc"
+eg(){ git -C "$esc" -c user.email=t@t.t -c user.name=t "$@"; }
+printf 'e\n' > "$esc/f1.txt"; eg add -A; eg commit -qm 'foo"bar\baz'
+printf 'e\n' > "$esc/f2.txt"; eg add -A; eg commit -qm "$(printf 'fix #12 e `code`\001 con controllo')"
+printf 'e\n' > "$esc/f3.txt"; eg add -A; eg commit -qm 'ultimo'
+eg tag 'v1#2'
+eout=$(python3 "$here/scripts/gitgraph.py" "$esc") || { echo "FAIL: escaping, exit non-zero"; exit 1; }
+grep -q 'tag: "foo'\''bar#92;baz"' <<<"$eout" \
+  || { echo "FAIL: escaping, backslash o doppio apice non neutralizzati"; fail=1; }
+grep -q 'tag: "fix #35;12 e #96;code#96;#65533; con controllo"' <<<"$eout" \
+  || { echo "FAIL: escaping, '#', backtick o carattere di controllo non neutralizzati"; fail=1; }
+grep -q 'tag: "v1#35;2"' <<<"$eout" || { echo "FAIL: escaping, '#' nel nome tag non neutralizzato"; fail=1; }
+
 if command -v mmdc >/dev/null; then
   python3 "$here/scripts/gitgraph.py" . --png "$tmp/out.png" 2>/dev/null
   [ -s "$tmp/out.png" ] || { echo "FAIL: --png non produce il file"; fail=1; }
