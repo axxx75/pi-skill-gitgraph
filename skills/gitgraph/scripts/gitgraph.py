@@ -207,7 +207,7 @@ class Graph:
             for p in parents:
                 if p in commits:
                     self.children.setdefault(p, []).append(h)
-        self.heads, self.finished, self.deferred = {}, set(), []
+        self.heads, self.finished, self.deferred = {}, set(), set()
         self.state = {"cur": None, "made": set()}
         self.start = self.start_branch = ""
 
@@ -312,7 +312,7 @@ class Graph:
             if len(par) > 1 and self.heads.get(self.owner.get(par[1])) != par[1]:
                 self.switch(cb)   # lane creata al fork point, poi si torna indietro
                 self.switch(branch)
-                self.deferred.append(c)
+                self.deferred.add(c)
                 continue
             self.switch(cb)
             self.walk(c, cb)
@@ -322,28 +322,37 @@ class Graph:
         return h not in self.finished and all(p in self.finished for p in self.parents_of(h))
 
     def settle(self):
-        """Componenti staccate (finestra troncata) e merge sbloccati, in un secondo giro."""
+        """Unico worklist: riprende i commit sbloccati finche' ne restano; `deferred`
+        e' solo il set dei merge mai ricostruiti (diagnostica, dedup gratuito).
+
+        Invariante di terminazione: `walk(h)` marca sempre `h` in `finished`, quindi
+        ogni giro prosciuga almeno un candidato — `todo` non vuota implica che ogni
+        suo `h` o e' gia' finito (walk ricorsivo) o viene camminato qui, e in entrambi
+        i casi `len(finished)` cresce. Essendo limitata da `len(commits)`, la crescita
+        garantisce l'uscita anche su un input degenere: nessun ciclo possibile.
+        """
         while True:
             todo = [h for h in reversed(list(self.commits)) if self.ready(h)]
             if not todo:
-                break
+                return
             for h in todo:
-                if not self.ready(h):
+                if not self.ready(h):  # finito nel frattempo dal walk ricorsivo
                     continue
-                if h in self.deferred:
-                    self.deferred.remove(h)
+                self.deferred.discard(h)
                 cb = self.owner.get(h, self.start_branch)
                 self.switch(cb)
                 self.walk(h, cb)
 
     def report_lost(self):
         """Reti di sicurezza: nulla sparisce in silenzio, i buchi diventano warning."""
-        lost = [h for h in reversed(list(self.commits)) if h not in self.finished]
+        # conteggio derivato (finished e' sottoinsieme di commits): un solo numero da tenere
+        lost = len(self.commits) - len(self.finished)
         if lost:
-            self.say(f"warning: {len(lost)} commit fuori dalle catene principali\n")
+            self.say(f"warning: {lost} commit fuori dalle catene principali\n")
             self.switch(self.start_branch)
-            for h in lost:
-                self.commit_line(h)
+            for h in reversed(list(self.commits)):
+                if h not in self.finished:
+                    self.commit_line(h)
         if self.deferred:
             self.say(f"warning: {len(self.deferred)} merge non ricostruiti\n")
         # un checkout finale non disegna nulla
