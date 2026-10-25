@@ -53,6 +53,16 @@ tail -1 <<<"$md" | grep -qx '```' || { echo "FAIL: --md non chiude il fence"; fa
 
 python3 "$here/scripts/gitgraph.py" "$tmp/f.txt" >/dev/null 2>&1 && { echo "FAIL: file non-repo accettato"; fail=1; }
 
+# -o: parita' byte-identica con stdout, nessun .tmp orfano, path invalido = una riga su stderr
+o=$(python3 "$here/scripts/gitgraph.py" .) || { echo "FAIL: stdout exit non-zero"; exit 1; }
+python3 "$here/scripts/gitgraph.py" . -o "$tmp/out.mmd" 2>/dev/null || { echo "FAIL: -o exit non-zero"; exit 1; }
+cmp -s "$tmp/out.mmd" <(printf '%s\n' "$o") || { echo "FAIL: -o diverso da stdout"; fail=1; }
+[ ! -e "$tmp/out.mmd.tmp" ] || { echo "FAIL: .tmp orfano dopo -o"; fail=1; }
+err=$(python3 "$here/scripts/gitgraph.py" . -o "$tmp/manca/out.mmd" 2>&1 >/dev/null); rc=$?
+[ "$rc" -eq 1 ] || { echo "FAIL: -o su directory inesistente, exit $rc"; fail=1; }
+[ "$(grep -c . <<<"$err")" -eq 1 ] || { echo "FAIL: -o su path invalido, messaggio non di una riga: $err"; fail=1; }
+grep -q 'directory inesistente' <<<"$err" || { echo "FAIL: -o su path invalido, messaggio inatteso: $err"; fail=1; }
+
 # collisione di nomi sanificati: feature/x e feature_x sono due rami, non una lane
 col="$tmp/col"; git init -q -b main "$col"
 cg(){ git -C "$col" -c user.email=t@t.t -c user.name=t "$@"; }
@@ -124,6 +134,12 @@ PY
 if command -v mmdc >/dev/null; then
   python3 "$here/scripts/gitgraph.py" . --png "$tmp/out.png" 2>/dev/null
   [ -s "$tmp/out.png" ] || { echo "FAIL: --png non produce il file"; fail=1; }
+  # il path invalido deve dirlo subito, non travestirsi da "mmdc fallito"
+  err=$(python3 "$here/scripts/gitgraph.py" . --png "$tmp/manca/out.png" 2>&1 >/dev/null)
+  [ "$(grep -c . <<<"$err")" -eq 1 ] \
+    || { echo "FAIL: --png su path invalido, messaggio non di una riga: $err"; fail=1; }
+  grep -q 'directory inesistente' <<<"$err" \
+    || { echo "FAIL: --png su path invalido maschera l'errore: $err"; fail=1; }
 else
   echo "SKIP: mmdc assente, test PNG non eseguito"
 fi

@@ -184,5 +184,77 @@ class GitErrorTest(unittest.TestCase):
         self.assertEqual(cm.exception.code, "boom")
 
 
+class OutputPathTest(unittest.TestCase):
+    """P1-06: path di uscita invalido -> una riga su stderr ed exit 1; scrittura atomica."""
+
+    def test_check_out_valido_non_esce(self):
+        with tempfile.TemporaryDirectory() as d:
+            gitgraph.check_out(os.path.join(d, "grafo.mmd"))  # nessun SystemExit
+
+    def test_check_out_directory_inesistente(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "manca", "grafo.mmd")
+            with self.assertRaises(SystemExit) as cm:
+                gitgraph.check_out(path)
+        self.assertIsInstance(cm.exception.code, str)
+        self.assertIn("directory inesistente", cm.exception.code)
+        self.assertIn(path, cm.exception.code)
+
+    def test_check_out_path_e_una_directory(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(SystemExit) as cm:
+                gitgraph.check_out(d)
+        self.assertIn("e' una directory", cm.exception.code)
+
+    def test_o_su_directory_inesistente_messaggio_cli(self):
+        with tempfile.TemporaryDirectory() as d:
+            argv = ["gitgraph.py", ".", "-o", os.path.join(d, "manca", "g.mmd")]
+            with mock.patch.object(gitgraph.sys, "argv", argv):
+                with self.assertRaises(SystemExit) as cm:
+                    gitgraph.main()
+        self.assertIsInstance(cm.exception.code, str)  # non un traceback
+        self.assertIn("directory inesistente", cm.exception.code)
+
+    def test_png_su_directory_inesistente_non_arriva_a_git(self):
+        # il difetto era: mmdc falliva e l'errore vero restava nascosto
+        with tempfile.TemporaryDirectory() as d:
+            argv = ["gitgraph.py", ".", "--png", os.path.join(d, "manca", "g.png")]
+            with mock.patch.object(gitgraph.sys, "argv", argv), \
+                    mock.patch.object(gitgraph, "read_graph") as read:
+                with self.assertRaises(SystemExit) as cm:
+                    gitgraph.main()
+        read.assert_not_called()
+        self.assertIn("directory inesistente", cm.exception.code)
+
+    def test_write_atomic_contenuto_esatto_e_nessun_tmp(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "grafo.mmd")
+            gitgraph.write_atomic(path, "gitGraph\n")
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "gitGraph\n")
+            self.assertFalse(os.path.exists(path + ".tmp"))
+
+    def test_write_atomic_sovrascrive_senza_append(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "grafo.mmd")
+            gitgraph.write_atomic(path, "vecchio contenuto piu' lungo\n")
+            gitgraph.write_atomic(path, "nuovo\n")
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "nuovo\n")
+
+    def test_replace_fallito_lascia_il_file_intatto_e_nessun_tmp(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "grafo.mmd")
+            gitgraph.write_atomic(path, "vecchio\n")
+            with mock.patch.object(gitgraph.os, "replace",
+                                   side_effect=OSError(28, "No space left on device")):
+                with self.assertRaises(SystemExit) as cm:
+                    gitgraph.write_atomic(path, "nuovo\n")
+            self.assertIn("scrittura fallita", cm.exception.code)
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "vecchio\n")  # niente troncamento
+            self.assertFalse(os.path.exists(path + ".tmp"))
+
+
 if __name__ == "__main__":
     unittest.main()
