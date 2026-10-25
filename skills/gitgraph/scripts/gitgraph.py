@@ -27,9 +27,15 @@ def slug(branch):
     return re.sub(r"[^A-Za-z0-9_-]", "_", branch) or "branch"
 
 
-def label(text):
-    text = " ".join(text.replace('"', "'").split())
-    return text[:MAX_SUBJECT] + "..." if len(text) > MAX_SUBJECT else text
+def label(text, limit=MAX_SUBJECT):
+    """Soggetto su una riga, troncato a confine di parola con ellissi (limit <= 0: intero)."""
+    text = " ".join(str(text).replace('"', "'").split())
+    if limit <= 0 or len(text) <= limit:
+        return text
+    cut = text[:limit - 1].rsplit(" ", 1)[0]
+    if len(cut) * 2 < limit:  # confine di parola troppo vicino all'inizio: taglio duro
+        cut = text[:limit - 1]
+    return cut + "…"
 
 
 def branch_tips(repo):
@@ -102,6 +108,9 @@ def main():
                     help="avvolge l'output in un fence ```mermaid (file .md per la preview)")
     ap.add_argument("--linear", action="store_true",
                     help="fila indiana: un solo ramo, nessuna ricostruzione dei merge")
+    ap.add_argument("--label-len", type=int, default=MAX_SUBJECT,
+                    help="caratteri massimi per etichetta, troncata a confine di parola "
+                         "(default 32, 0 = soggetto intero)")
     a = ap.parse_args()
 
     if git(a.repo, "rev-parse", "--is-inside-work-tree").strip() != "true":
@@ -133,10 +142,14 @@ def main():
         out.append("    " + line)
 
     def tag_of(h, fallback):
-        return label(", ".join(tags[h])) if h in tags else fallback
+        """Primo tag, mai spezzato: i tag in piu' diventano "+N"; subject troncato se non c'e' tag."""
+        if h not in tags:
+            return label(fallback, a.label_len)
+        head = label(tags[h][0], a.label_len)
+        return f"{head} +{len(tags[h]) - 1}" if len(tags[h]) > 1 else head
 
     def commit_line(h):
-        emit(f'commit id: "{short[h]}" tag: "{tag_of(h, label(commits[h][1]))}"')
+        emit(f'commit id: "{short[h]}" tag: "{tag_of(h, commits[h][1])}"')
 
     def header(branch_name):
         out.append('%%{init: {"gitGraph": {"mainBranchName": "'
@@ -221,7 +234,7 @@ def main():
                 side = owner.get(par[1]) or next(
                     (b for b, tip in heads.items() if tip == par[1]), None)
                 if side and side != branch and heads.get(side) == par[1]:
-                    emit(f'merge {uname(side)} id: "{short[h]}" tag: "{tag_of(h, label(commits[h][1]))}"')
+                    emit(f'merge {uname(side)} id: "{short[h]}" tag: "{tag_of(h, commits[h][1])}"')
                     return
             commit_line(h)
 

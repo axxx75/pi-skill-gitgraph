@@ -4,11 +4,14 @@ Skill per [pi](https://pi.dev) che trasforma la storia di un repository Git in u
 `gitGraph`** con rami, fork e merge ricostruiti (non una fila indiana), più — opzionalmente — il
 rendering PNG locale.
 
-![Esempio: tre rami (feature/auth, feature/payments, hotfix/session), merge ricostruiti e tag v1.0.0 / v1.1.0](skills/gitgraph/assets/example.png)
+![Esempio: due rami (feature/payments, feature/auth), merge ricostruiti, tag v1.0.0 / release-1.0 +1 ed etichette troncate con …](skills/gitgraph/assets/example.png)
 
-*Esempio generato da questo pacchetto: `--png` su un repo con tre rami e due merge. I merge portano
-l'id del commit di merge, i tag git compaiono come `tag:`, i subject più lunghi di 32 caratteri sono
-troncati. Riproducibile con `python3 skills/gitgraph/scripts/gitgraph.py <repo> -n 25 --png out.png`.*
+*Esempio generato da questo pacchetto: `--png` su un repo con due rami e due merge, `--label-len 12`
+per un grafo stretto. I merge portano l'id del commit di merge, i tag git compaiono come `tag:` (se
+il commit ne ha più di uno: il primo più `+N`), i subject sono troncati a `--label-len` caratteri
+(default 32) a confine di parola con `…`, con taglio duro se il confine lascerebbe meno di metà del
+testo. Riproducibile con
+`python3 skills/gitgraph/scripts/gitgraph.py <repo> -n 20 --label-len 12 --png out.png`.*
 
 Output possibili:
 
@@ -86,6 +89,7 @@ Cosa fa: costruisce un repo usa-e-getta (ramo `feature/x`, un merge `--no-ff`, u
 - prima riga = direttiva `%%{init:...}` e presenza di `gitGraph`;
 - `branch feature_x` e `merge feature_x id:` presenti (slash sanificato, merge ricostruito);
 - `tag: "v1"` riportato dal tag git reale;
+- etichette: troncatura a confine di parola con `…`, `--label-len` rispettato, con più tag compare il primo e `+N`; su un subject convenzionale reale (`feat: add-idempotency-key-rotation`) l'etichetta conserva almeno metà del limite e i caratteri distintivi (niente `feat:…`);
 - numero di `commit id:` esatto (5);
 - con `--linear` l'output resta Mermaid valido: prima riga `%%{init:...}`, `gitGraph` presente, almeno un `commit id:`, anche con HEAD non risolto (ref puntato ma mai committato);
 - `--md` apre e chiude il fence, l'output raw **non** contiene fence;
@@ -112,8 +116,15 @@ python3 skills/gitgraph/scripts/gitgraph.py ~/un/repo -n 15 --png /tmp/grafo.png
 | `--md` | avvolge l'output nel fence ```` ```mermaid ```` |
 | `--png FILE` | renderizza il PNG con `mmdc` (largo 1600 px, sfondo bianco); niente stdout |
 | `--linear` | fila indiana, un solo ramo: ripiego se la ricostruzione esce sbagliata |
+| `--label-len N` | caratteri massimi del testo dell'etichetta, troncato a confine di parola con `…` (default 32; `0` = soggetto intero); con più tag `+N` è accodato a parte |
 
 `stdout` è Mermaid puro; i warning vanno su `stderr`.
+
+**Etichette e leggibilità:** Mermaid disegna le etichette con una spaziatura fissa (~40 unità SVG
+per commit) e non la espone in configurazione: oltre ~8 caratteri le etichette di commit adiacenti
+nella stessa lane possono sovrapporsi e restare tagliate. Non è aggirabile dallo script né dal PNG
+già renderizzato (il PNG è un artefatto del renderer, non un file modificabile). Per un grafo
+leggibile resta `--label-len` contenuto (10-12) e/o `-n` ridotto, accettando subject abbreviati.
 
 Un merge si ricostruisce solo con **entrambi i genitori** nella finestra di commit: se `stderr`
 segnala `commit fuori dalle catene principali` o `merge non ricostruiti`, rilancia con `-n` più alto.
@@ -127,6 +138,7 @@ segnala `commit fuori dalle catene principali` o `merge non ricostruiti`, rilanc
 | `mmdc fallito: ...` | Chromium incompatibile o `--size` assente (major vecchia) | verifica `mmdc --version` e `mmdc --help` |
 | `non e' un repository git` | path sbagliato o sottodirectory di un worktree | passa la radice del repo |
 | Grafo "a fila indiana" | finestra `-n` troppo piccola, merge fuori | `-n` più alto, o `--linear` se vuoi davvero la fila |
+| Etichette che si sovrappongono / si tagliano nel PNG | spaziatura fissa di Mermaid gitGraph (~40 unità per commit), non configurabile | `--label-len` contenuto (10-12) o `-n` ridotto; il PNG già renderizzato non è modificabile dallo script |
 | Repo con `main` divergente da `origin/main` | due lane: è la storia reale | nessuna azione |
 | Skill `gitgraph` duplicata (pacchetto + copia in `~/.pi/agent/skills/gitgraph`) | pi carica la **prima** trovata e stampa un warning di collisione | rimuovi la copia vecchia: `pi config` → Resources |
 
