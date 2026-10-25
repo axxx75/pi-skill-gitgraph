@@ -226,6 +226,19 @@ class OutputPathTest(unittest.TestCase):
         read.assert_not_called()
         self.assertIn("directory inesistente", cm.exception.code)
 
+    def test_png_valido_ignora_o_invalido(self):
+        # --png vince su -o: validare un path che main() ignora bloccherebbe il lavoro buono
+        with tempfile.TemporaryDirectory() as d:
+            png = os.path.join(d, "g.png")
+            argv = ["gitgraph.py", ".", "--png", png,
+                    "-o", os.path.join(d, "manca", "g.mmd")]
+            with mock.patch.object(gitgraph.sys, "argv", argv), \
+                    mock.patch.object(gitgraph, "read_graph",
+                                      return_value=linear_fixture() + ({}, [], "")), \
+                    mock.patch.object(gitgraph, "render_png") as render_png:
+                gitgraph.main()  # nessun SystemExit
+        self.assertEqual(render_png.call_args[0][1], png)
+
     def test_write_atomic_contenuto_esatto_e_nessun_tmp(self):
         with tempfile.TemporaryDirectory() as d:
             path = os.path.join(d, "grafo.mmd")
@@ -253,6 +266,17 @@ class OutputPathTest(unittest.TestCase):
             self.assertIn("scrittura fallita", cm.exception.code)
             with open(path, encoding="utf-8") as f:
                 self.assertEqual(f.read(), "vecchio\n")  # niente troncamento
+            self.assertFalse(os.path.exists(path + ".tmp"))
+
+    def test_interrupt_a_meta_scrittura_non_lascia_tmp_orfano(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "grafo.mmd")
+            gitgraph.write_atomic(path, "vecchio\n")
+            with mock.patch.object(gitgraph.os, "replace", side_effect=KeyboardInterrupt):
+                with self.assertRaises(KeyboardInterrupt):
+                    gitgraph.write_atomic(path, "nuovo\n")
+            with open(path, encoding="utf-8") as f:
+                self.assertEqual(f.read(), "vecchio\n")
             self.assertFalse(os.path.exists(path + ".tmp"))
 
 

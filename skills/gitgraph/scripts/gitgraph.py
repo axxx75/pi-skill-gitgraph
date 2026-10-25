@@ -120,11 +120,14 @@ def write_atomic(path, text):
             f.write(text)
         os.replace(tmp, path)
     except OSError as e:
-        try:
-            os.unlink(tmp)  # nessun .tmp orfano se la scrittura si e' fermata a meta'
-        except OSError:
-            pass
         sys.exit(f"{path}: scrittura fallita: {e.strerror or e}")
+    finally:
+        # nessun .tmp orfano, anche su KeyboardInterrupt/SystemExit (dopo il replace e' un no-op)
+        if os.path.exists(tmp):
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
 
 def read_graph(repo, n, linear=False):
@@ -337,9 +340,10 @@ def main():
                     help="caratteri massimi per etichetta, troncata a confine di parola "
                          "(default 32, 0 = soggetto intero)")
     a = ap.parse_args()
-    for path in (a.o, a.png):
-        if path:
-            check_out(path)
+    if a.png:
+        check_out(a.png)  # --png vince su -o, che main() ignora: non deve bloccare
+    elif a.o:
+        check_out(a.o)
 
     try:
         commits, short, tags, tips, head = read_graph(a.repo, a.n, a.linear)
