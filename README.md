@@ -291,6 +291,9 @@ anche fuori dal repo — più due file temporanei in una `TemporaryDirectory` di
 `puppeteer.json`), cancellata all'uscita. Per l'uninstall basta rimuovere i file che hai creato tu:
 il pacchetto non lascia residui propri.
 
+Versioni e decisioni: [`RELEASE_NOTE.md`](RELEASE_NOTE.md) è il registro unico delle release,
+[`docs/adr/`](docs/adr/) raccoglie le decisioni architetturali (contesto, decisione, conseguenze).
+
 ## License
 
 MIT — vedi [LICENSE](LICENSE).

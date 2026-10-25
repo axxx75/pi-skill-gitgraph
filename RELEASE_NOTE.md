@@ -75,6 +75,13 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   (checkout con `fetch-depth: 0`, altrimenti lì sarebbe uno `SKIP`) e la procedura — test →
   `RELEASE_NOTE` + bump → commit → tag → push → `pi install` — è in README §Release. Nessun cambio
   di comportamento del grafo.
+- P2-15: `docs/adr/` con **5 ADR** sulle decisioni già prese e verificabili dalla storia: escaping
+  Mermaid in un unico punto (`#TASK-P2-01`), separatore `\x1f` nel parsing del log (`#TASK-P2-07`),
+  sandbox Chromium attiva con gate `GITGRAPH_NO_SANDBOX=1` (`#TASK-P2-02`), finestra = rami locali +
+  `origin` + tag (`#TASK-P2-03`), warning su stderr come contratto macchina (`#TASK-P2-06`); formato
+  minimo stato/data/contesto/decisione/conseguenze, nessun template vuoto. `RELEASE_NOTE.md` resta
+  il registro unico delle versioni e recupera la voce mancante **1.0.1** (esempio grafico, ricavata
+  dai commit); README chiude con il rimando a `docs/adr/` e a `RELEASE_NOTE.md`.
 
 ### Note
 
@@ -118,6 +125,14 @@ Le versioni precedenti sono ricostruibili dalla storia git.
 
 - Fix `--linear`: nessun header Mermaid quando il grafo è lineare.
 - Fix `HEAD` unborn/dangling: `git()` non termina più con exit 1 (`strict=False` + fallback), caso coperto nel selftest.
+
+## 1.0.1 — 2026-10-24
+
+- Esempio grafico nel README (`skills/gitgraph/assets/example.png`): due rami, due merge e i tag
+  `v1.0.0`/`release-1.0`, generato con `mmdc 12.0.0`; l'asset è un'illustrazione, non un golden
+  file.
+- README §Install: un ref pinnato (`git:…@v1.0.1`) non si sposta più con `pi update`; senza ref si
+  segue `main`.
 
 ## 1.0.0
 
