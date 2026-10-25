@@ -54,7 +54,7 @@ jobs:
           python-version: '3.12'
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
       # mmdc pinnato: la 12 ha cambiato i flag (--size al posto di -w) e
       # scripts/gitgraph.py usa --size. Niente PUPPETEER_SKIP_DOWNLOAD: puppeteer
       # porta il suo Chromium in ~/.cache/puppeteer, che gitgraph.py sa trovare.
