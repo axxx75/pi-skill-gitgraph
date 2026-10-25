@@ -143,8 +143,9 @@ grafo giusto».
 ### CI
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) gira su push di `main`, sui tag `v*` e sulle
-pull request: `selftest.sh` + `py_compile` su Python 3.8 e 3.12, un job `png` (mmdc 12.0.0 + Chromium,
-dove lo `SKIP` non è ammesso) e `gitleaks` su tutta la storia. Il job `png` imposta
+pull request: `selftest.sh` + `py_compile` su Python 3.8 e 3.12 (più `check-release.sh`, che lì
+trova i tag), un job `png` (mmdc 12.0.0 + Chromium, dove lo `SKIP` non è ammesso) e `gitleaks` su
+tutta la storia. Il job `png` imposta
 `GITGRAPH_NO_SANDBOX=1`: il runner ubuntu-latest limita lo user namespace di Chromium, quindi lì il
 gate esplicito è la configurazione corretta (il render sandboxato è quello locale). Lo stesso gate
 in locale, senza runner:
@@ -161,6 +162,27 @@ python3 skills/gitgraph/scripts/gitgraph.py ~/un/repo -n 15
 python3 skills/gitgraph/scripts/gitgraph.py ~/un/repo -n 15 -o /tmp/grafo.md --md
 python3 skills/gitgraph/scripts/gitgraph.py ~/un/repo -n 15 --png /tmp/grafo.png
 ```
+
+## Release
+
+Registro unico delle versioni: [`RELEASE_NOTE.md`](RELEASE_NOTE.md) (append-only, dalla più
+recente). Decisioni architetturali: [`docs/adr/`](docs/adr/). Una release non è chiusa se repo
+locale, checkout installato e GitHub divergono. Ordine:
+
+1. **Test verdi** (obbligatorio: `pi install git:...` senza ref preleva `main`):
+   `bash skills/gitgraph/tests/selftest.sh`.
+2. **Registro + versione**: nuova sezione `## X.Y.Z — AAAA-MM-GG` in `RELEASE_NOTE.md` con le voci
+   testate e accettate, poi `version` in `package.json`. Nessun altro file dichiara la versione.
+3. **Commit** su `main` e push.
+4. **Tag** della stessa versione: `git tag vX.Y.Z && git push origin vX.Y.Z`. Il tag è il punto di
+   rollback; `pi install`/`pi update` senza ref seguono `main`, non il tag.
+5. **Check di coerenza**, dopo il tag: `bash skills/gitgraph/tests/check-release.sh`. Offline, sui
+   soli tag locali: `OK` se `package.json` → tag `vX.Y.Z` (antenato di `HEAD`) → voce in
+   `RELEASE_NOTE.md` coincidono; `SKIP` se il checkout non ha tag (`git fetch --tags` per averli);
+   exit 1 su qualunque incoerenza. Tra il bump e il tag il check **fallisce per costruzione**: una
+   versione senza tag non è rilasciata. Gira anche in CI, nel job `selftest`.
+6. **Installazione**: `pi install git:github.com/axxx75/pi-skill-gitgraph` (o `pi update`) e riavvio
+   del servizio se la skill ne espone uno.
 
 ## Usage
 

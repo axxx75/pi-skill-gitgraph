@@ -68,6 +68,13 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   dal refactor P0-04). Nella forma del fork-clone (202 ref: `main` locale, `origin/main` = `main`,
   200 upstream) la stessa finestra dà 1 lane e 0 lane upstream. Nessun `rev-list
   --stdin`: non serve. Limite e numeri dichiarati in `SKILL.md` (Limiti) e README.
+- P2-10: **flusso di release verificabile**. `skills/gitgraph/tests/check-release.sh` verifica
+  offline (solo tag locali, nessun `git ls-remote`) che `package.json.version` abbia il tag
+  `vX.Y.Z` antenato di `HEAD` e che `RELEASE_NOTE.md` abbia la voce `## X.Y.Z`; senza tag locali
+  esce `SKIP` (mai un verde finto), su incoerenza exit 1. Il check gira nel job CI `selftest`
+  (checkout con `fetch-depth: 0`, altrimenti lì sarebbe uno `SKIP`) e la procedura — test →
+  `RELEASE_NOTE` + bump → commit → tag → push → `pi install` — è in README §Release. Nessun cambio
+  di comportamento del grafo.
 
 ### Note
 
