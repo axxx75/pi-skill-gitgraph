@@ -3,6 +3,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")/.." && pwd)
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+MMDC_VERSION=12.0.0   # versione usata per assets/example.png: diversa = WARN, non FAIL
 
 # git init -b richiede git >= 2.28, il supporto dichiarato parte da 2.20:
 # sotto soglia si crea il repo e si punta HEAD al ramo principale a mano
@@ -230,6 +231,10 @@ grep -qx 'gitGraph' <<<"$shout" || { echo "FAIL: shallow clone, manca gitGraph";
   || { echo "FAIL: shallow clone, atteso 1 commit nella finestra"; fail=1; }
 
 if command -v mmdc >/dev/null; then
+  # solo avviso: un'altra 12.x cambia il render ma il path --png deve restare installabile
+  mmdc_ver=$(mmdc --version 2>/dev/null) || mmdc_ver='sconosciuta'
+  [ "$mmdc_ver" = "$MMDC_VERSION" ] \
+    || echo "WARN: mmdc $mmdc_ver != $MMDC_VERSION (PNG non confrontabile con l'asset)" >&2
   python3 "$here/scripts/gitgraph.py" . --png "$tmp/out.png" 2>/dev/null \
     || { echo "FAIL: --png exit non-zero"; exit 1; }
   [ -s "$tmp/out.png" ] || { echo "FAIL: --png non produce il file"; fail=1; }

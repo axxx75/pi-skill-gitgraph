@@ -25,6 +25,10 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   deterministico (niente `date +%s%N`) e `git init -b` ha il fallback senza `-b` per git < 2.28
   (soglia dichiarata invariata a 2.20). Nuovi casi: `-n` (conteggio e rifiuto di `0`), repo a un
   commit, repo vuoto, clone `--depth 1`. README §Verify dichiara anche cosa **non** è coperto.
+- P2-11: installazione di `mmdc` pinnata alla versione esatta `12.0.0` con `--ignore-scripts`
+  (nessuno script di install del pacchetto) in README e `references/png-setup.md`; `selftest.sh`
+  confronta `mmdc --version` con `12.0.0` e, se diversa, lo dice su stderr proseguendo: è un avviso,
+  non un gate. Nessuna promessa di riproducibilità byte-per-byte dell'asset.
 
 ### Note
 

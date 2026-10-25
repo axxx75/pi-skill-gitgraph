@@ -32,7 +32,7 @@ volte, una con `--png` e una con `-o grafo.md --md`.
 |---|---|---|
 | `python3` | ≥ 3.8 (testato su 3.14) | sì |
 | `git` | ≥ 2.20 (testato su 2.53) | sì |
-| `mmdc` (`@mermaid-js/mermaid-cli`) | 12.x pinnata (testato 12.0.0) | no, solo `--png` |
+| `mmdc` (`@mermaid-js/mermaid-cli`) | `12.0.0` esatta (l'asset è generato con questa; un'altra 12.x avvisa ma non blocca) | no, solo `--png` |
 | Chromium | uno qualsiasi fra i percorsi in `references/png-setup.md` | no, solo `--png` |
 | `pi` | ≥ 1.4 (pacchetti `pi` + skill) | sì per l'uso come skill |
 
@@ -75,9 +75,15 @@ La skill si attiva da sola quando la richiesta la riguarda, oppure in modo espli
 ### `--png` (opzionale)
 
 ```bash
-PUPPETEER_SKIP_DOWNLOAD=1 npm i -g --prefix ~/.local @mermaid-js/mermaid-cli@12
+PUPPETEER_SKIP_DOWNLOAD=1 npm i -g --prefix ~/.local --ignore-scripts @mermaid-js/mermaid-cli@12.0.0
 ln -sf ~/.local/lib/node_modules/@mermaid-js/mermaid-cli/src/cli.js ~/bin/mmdc
+mmdc --version          # atteso: 12.0.0
 ```
+
+La versione è **esatta**: due 12.x installate a mesi di distanza possono produrre PNG diversi, e
+`--ignore-scripts` non esegue gli script di install del pacchetto (`PUPPETEER_SKIP_DOWNLOAD=1` evita
+comunque il download di Chromium). Il selftest confronta `mmdc --version` con `12.0.0` e, se diversa,
+lo dice su `stderr` proseguendo col render: è un avviso, non un fallimento.
 
 Chromium: la skill riusa quello che trova (browser-tools di pi, cache puppeteer/playwright,
 chromium di sistema) oppure quello indicato da `PUPPETEER_EXECUTABLE_PATH`.
@@ -105,7 +111,7 @@ un commit, un repo vuoto e un clone shallow) e verifica
 - un repo a un solo commit produce un grafo con un commit; un repo vuoto esce con 1 e `nessun commit trovato`; un clone `--depth 1` produce un grafo valido;
 - escaping e parsing: `"`, `\`, `#`, backtick e caratteri di controllo nel subject o nel tag restano renderizzabili; un subject con `|` non rompe il log; un tag in formato inatteso esce con `tag non interpretabile`;
 - collisione di nomi sanificati (`feature/x` + `feature_x`): due lane distinte, warning su stderr;
-- `--png` produce un file non vuoto (se `mmdc` è installato, altrimenti `SKIP`).
+- `--png` produce un file non vuoto (se `mmdc` è installato, altrimenti `SKIP`); una `mmdc --version` diversa da `12.0.0` produce un `WARN` su stderr, non un fallimento.
 
 Lo script gira con `set -euo pipefail`: un comando che fallisce ferma il test (nessun falso verde) e
 `git init -b` ha un fallback senza `-b` per git < 2.28.
