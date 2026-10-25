@@ -12,7 +12,7 @@ Produce il codice Mermaid e, con `--png`, il rendering locale. Tre destinazioni:
 ## Uso
 
 ```bash
-python3 {baseDir}/scripts/gitgraph.py [REPO] [-n 30] [-o FILE] [--md] [--png FILE] [--linear]
+python3 {baseDir}/scripts/gitgraph.py [REPO] [-n 30] [-o FILE] [--md] [--png FILE] [--linear] [--label-len N]
 ```
 
 | Opzione | Significato |
@@ -23,6 +23,7 @@ python3 {baseDir}/scripts/gitgraph.py [REPO] [-n 30] [-o FILE] [--md] [--png FIL
 | `--md` | avvolge l'output nel fence ```` ```mermaid ````: `-o grafo.md` è pronto per la preview |
 | `--png FILE` | renderizza il PNG con `mmdc` (largo 1600px, sfondo bianco); niente stdout |
 | `--linear` | fila indiana, un solo ramo: ripiego se la ricostruzione esce sbagliata |
+| `--label-len N` | caratteri massimi per etichetta, troncata a confine di parola con `…` (default 32; `0` = soggetto intero, 10-12 per grafi stretti) |
 
 stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` lo stdout resta vuoto. Warning e diagnostica vanno su stderr. `--png` richiede `mmdc` e un Chromium: installazione e diagnosi in `references/png-setup.md`.
 
@@ -37,7 +38,7 @@ stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` lo stdout re
 
 - Una lane per ramo locale o remoto distinto, aperta al fork point reale (first-parent), chiusa con `merge <ramo> id: "<hash>"`.
 - Catene laterali senza ref (tipiche dei merge PR): lane sintetica `merge_<hash>`.
-- `tag:` = tag git reale se il commit ne ha uno, altrimenti subject troncato a 32 caratteri.
+- `tag:` = tag git reale se il commit ne ha uno (con più tag: il primo più `+N`, mai un tag spezzato), altrimenti subject troncato a `--label-len` caratteri (default 32) a confine di parola con `…`.
 - Nomi ramo sanificati per Mermaid: `feature/x` → `feature_x`.
 
 ## Limiti

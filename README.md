@@ -7,8 +7,9 @@ rendering PNG locale.
 ![Esempio: tre rami (feature/auth, feature/payments, hotfix/session), merge ricostruiti e tag v1.0.0 / v1.1.0](skills/gitgraph/assets/example.png)
 
 *Esempio generato da questo pacchetto: `--png` su un repo con tre rami e due merge. I merge portano
-l'id del commit di merge, i tag git compaiono come `tag:`, i subject più lunghi di 32 caratteri sono
-troncati. Riproducibile con `python3 skills/gitgraph/scripts/gitgraph.py <repo> -n 25 --png out.png`.*
+l'id del commit di merge, i tag git compaiono come `tag:` (se il commit ne ha più di uno: il primo
+più `+N`), i subject sono troncati a `--label-len` caratteri (default 32) a confine di parola con
+`…`. Riproducibile con `python3 skills/gitgraph/scripts/gitgraph.py <repo> -n 25 --png out.png`.*
 
 Output possibili:
 
@@ -86,6 +87,7 @@ Cosa fa: costruisce un repo usa-e-getta (ramo `feature/x`, un merge `--no-ff`, u
 - prima riga = direttiva `%%{init:...}` e presenza di `gitGraph`;
 - `branch feature_x` e `merge feature_x id:` presenti (slash sanificato, merge ricostruito);
 - `tag: "v1"` riportato dal tag git reale;
+- etichette: troncatura a confine di parola con `…`, `--label-len` rispettato, con più tag compare il primo e `+N` (mai un tag spezzato);
 - numero di `commit id:` esatto (5);
 - con `--linear` l'output resta Mermaid valido: prima riga `%%{init:...}`, `gitGraph` presente, almeno un `commit id:`, anche con HEAD non risolto (ref puntato ma mai committato);
 - `--md` apre e chiude il fence, l'output raw **non** contiene fence;
@@ -112,6 +114,7 @@ python3 skills/gitgraph/scripts/gitgraph.py ~/un/repo -n 15 --png /tmp/grafo.png
 | `--md` | avvolge l'output nel fence ```` ```mermaid ```` |
 | `--png FILE` | renderizza il PNG con `mmdc` (largo 1600 px, sfondo bianco); niente stdout |
 | `--linear` | fila indiana, un solo ramo: ripiego se la ricostruzione esce sbagliata |
+| `--label-len N` | caratteri massimi per etichetta, troncata a confine di parola con `…` (default 32; `0` = soggetto intero) |
 
 `stdout` è Mermaid puro; i warning vanno su `stderr`.
 

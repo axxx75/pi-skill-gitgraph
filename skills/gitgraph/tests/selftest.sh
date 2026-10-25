@@ -72,6 +72,40 @@ grep -q 'warning: ramo "feature[/_]x": "feature_x"' "$tmp/col.err" \
 [ "$(grep -c 'commit id:\|merge .* id:' <<<"$cout")" -eq 7 ] \
   || { echo "FAIL: collisione, commit persi"; fail=1; }
 
+# etichette: troncatura a confine di parola, --label-len, multi-tag mai spezzato
+cat > "$tmp/maxlabel.py" <<'PY'
+import sys
+limit, bad = int(sys.argv[1]), False
+for line in sys.stdin:
+    if ' tag: "' not in line:
+        continue
+    text = line.partition(' tag: "')[2].rstrip().rstrip('"')
+    bad = bad or len(text.rsplit(" +", 1)[0]) > limit
+sys.exit(1 if bad else 0)
+PY
+lab="$tmp/lab"; git init -q -b main "$lab"
+lg(){ git -C "$lab" -c user.email=t@t.t -c user.name=t "$@"; }
+lc(){ echo "$1" > "$lab/f$(date +%s%N).txt"; lg add -A; lg commit -qm "$1"; }
+lc "feat: configurazione molto lunga delle etichette nei diagrammi"
+lc "secondo commit con soggetto breve"
+lg tag t1; lg tag t2; lg tag t3
+lout=$(python3 "$here/scripts/gitgraph.py" "$lab") || { echo "FAIL: etichette, exit non-zero"; exit 1; }
+grep -q 'tag: "feat: configurazione molto…"' <<<"$lout" \
+  || { echo "FAIL: troncatura non a confine di parola con ellissi"; fail=1; }
+python3 "$tmp/maxlabel.py" 32 <<<"$lout" \
+  || { echo "FAIL: etichetta oltre 32 caratteri"; fail=1; }
+grep -q 'tag: "t1 +2"' <<<"$lout" || { echo "FAIL: multi-tag non annotato '+2'"; fail=1; }
+grep -q 'tag: "t[23]' <<<"$lout" && { echo "FAIL: secondo tag troncato o ripetuto"; fail=1; }
+lout0=$(python3 "$here/scripts/gitgraph.py" "$lab" --label-len 0) \
+  || { echo "FAIL: --label-len 0 exit non-zero"; exit 1; }
+grep -q 'tag: "feat: configurazione molto lunga delle etichette nei diagrammi"' <<<"$lout0" \
+  || { echo "FAIL: --label-len 0 non tiene il soggetto intero"; fail=1; }
+lout12=$(python3 "$here/scripts/gitgraph.py" "$lab" --label-len 12) \
+  || { echo "FAIL: --label-len 12 exit non-zero"; exit 1; }
+grep -q 'tag: "feat:…"' <<<"$lout12" || { echo "FAIL: --label-len 12 non tronca"; fail=1; }
+python3 "$tmp/maxlabel.py" 12 <<<"$lout12" \
+  || { echo "FAIL: --label-len 12, etichetta oltre 12 caratteri"; fail=1; }
+
 if command -v mmdc >/dev/null; then
   python3 "$here/scripts/gitgraph.py" . --png "$tmp/out.png" 2>/dev/null
   [ -s "$tmp/out.png" ] || { echo "FAIL: --png non produce il file"; fail=1; }
