@@ -126,9 +126,16 @@ def label(text, limit=LABEL_LEN_DEFAULT):
 
 
 def branch_tips(repo):
-    """(ref, commit) dei rami, senza duplicati: un ramo locale vince sul remoto omonimo."""
-    tips, seen = [], set()
-    for ns in ("refs/heads/", "refs/remotes/"):
+    """(ref, commit) dei rami, senza duplicati: un ramo locale vince sul remoto omonimo.
+
+    Dei remoti si tengono solo i ref di `origin` (se ne esistono): i rami degli altri
+    remoti (fork/upstream, possono essere centinaia) aprirebbero lane che non
+    appartengono alla storia del repo. Senza `origin` si usano i remoti presenti.
+    Il limite e' dichiarato in SKILL.md; il costo del giro resta O(ref) in un solo
+    `for-each-ref` per namespace, non un processo per ramo.
+    """
+    local, remote, seen = [], [], set()
+    for ns, bucket in (("refs/heads/", local), ("refs/remotes/", remote)):
         raw = git(repo, "for-each-ref", "--sort=-committerdate",
                   "--format=%(refname) %(objectname) %(symref)", ns)
         for line in raw.splitlines():
@@ -137,9 +144,10 @@ def branch_tips(repo):
             if not sha or symref.strip() or sha in seen:
                 continue
             seen.add(sha)
-            tips.append((ref[len(ns):], sha))
+            bucket.append((ref[len(ns):], sha))
+    origin = [t for t in remote if t[0].startswith("origin/")]
     # il ramo principale rivendica per primo la sua catena first-parent
-    return sorted(tips, key=lambda t: t[0] not in MAIN_NAMES)
+    return sorted(local + (origin or remote), key=lambda t: t[0] not in MAIN_NAMES)
 
 
 def chrome_bin():

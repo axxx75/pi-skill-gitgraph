@@ -119,6 +119,7 @@ un commit, un repo vuoto e un clone shallow) e verifica
 - un repo a un solo commit produce un grafo con un commit; un repo vuoto esce con 1 e `nessun commit trovato`; un clone `--depth 1` produce un grafo valido;
 - escaping e parsing: `"`, `\`, `#`, backtick e caratteri di controllo nel subject o nel tag restano renderizzabili; un subject con `|` non rompe il log; un tag in formato inatteso esce con `tag non interpretabile`;
 - collisione di nomi sanificati (`feature/x` + `feature_x`): due lane distinte, warning su stderr;
+- ref remoti: un ramo di `origin` apre la sua lane, un ref di `upstream`/fork no (filtro P2-03);
 - `--png` produce un file non vuoto (se `mmdc` è installato, altrimenti `SKIP`); una `mmdc --version` diversa da `12.0.0` produce un `WARN` su stderr, non un fallimento;
 - `--png` stampa su stdout la sola riga `![Storia git: N commit su M rami](file.png)`; `--width 800` è rispettata (larghezza letta dall'IHDR del PNG);
 - `--theme` e `--font` compaiono nella direttiva `%%{init}%%` (`"theme": "dark"`, `"fontSize": "20px"`) e `--width 0` esce con 2 e `serve --width >= 1`;
@@ -198,9 +199,11 @@ numero di commit che `git log --all --topo-order` restituisce, e la ricostruzion
 solo su quelli; la catena first-parent di ogni tip viene percorsa **dentro** la finestra. Per questo
 alzare `-n` "aggiusta" il grafo: fa rientrare i genitori di un merge, che senza entrambi non è
 ricostruibile (e il commit finisce in una lane laterale o in un warning). Il costo cresce con i
-rami: più tip = più catene da percorrere e due `git for-each-ref` su tutti i ref, quindi su un repo
-con molti rami/ref remoti conviene partire bassi e alzare solo se `stderr` segnala merge non
-ricostruiti. `-n < 1` è rifiutato (exit 2): non esiste una finestra vuota.
+rami: più tip = più catene da percorrere e due `git for-each-ref` su tutti i ref (due processi,
+non uno per ramo), quindi su un repo con molti rami conviene partire bassi e alzare solo se
+`stderr` segnala merge non ricostruiti. Dei remoti solo `origin` apre lane (vedi §Limiti noti):
+216 ref misurati su un repo di prova costano ~0,06 s contro ~0,05 s con 4 ref. `-n < 1` è
+rifiutato (exit 2): non esiste una finestra vuota.
 
 ## Limiti noti
 
@@ -211,6 +214,9 @@ Comportamenti verificabili che non si aggirano dai flag:
   disegnare. Workaround: clonare il repo (`git clone <path>`) e passare il clone.
 - **Directory di output non create**: `-o` e `--png` richiedono che la directory esista già
   (`directory inesistente`, exit 1): lo script non crea cartelle. Workaround: `mkdir -p` prima.
+- **Rami remoti non-`origin`**: solo i ref di `origin` producono lane; i fork/upstream restano fuori
+  dal grafo (senza `origin` si usano i remoti presenti). Non c'è un flag per cambiarlo: se serve
+  quella vista, rinomina il remoto in `origin`.
 - **Una destinazione per invocazione**: `--png` è incompatibile con `-o`/`--md` (exit 2); per avere
   sia il PNG sia il `.md` esegui lo script due volte.
 

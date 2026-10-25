@@ -416,6 +416,36 @@ class GitErrorTest(unittest.TestCase):
         self.assertEqual(cm.exception.code, "boom")
 
 
+class BranchTipsTest(unittest.TestCase):
+    """P2-03: dei remoti contano solo i ref di origin; i fork/upstream non aprono lane."""
+
+    def tips(self, heads="", remotes=""):
+        def fake(repo, *args):
+            return heads if args[-1] == "refs/heads/" else remotes
+        with mock.patch.object(gitgraph, "git", fake):
+            return gitgraph.branch_tips(".")
+
+    def test_solo_origin_quando_esiste(self):
+        tips = self.tips(heads="refs/heads/main a1 \n",
+                         remotes="refs/remotes/origin/dev a2 \n"
+                                 "refs/remotes/upstream/fork a9 \n")
+        self.assertEqual(tips, [("main", "a1"), ("origin/dev", "a2")])
+
+    def test_senza_origin_restano_i_remoti_presenti(self):
+        self.assertEqual(self.tips(remotes="refs/remotes/upstream/dev a2 \n"),
+                         [("upstream/dev", "a2")])
+
+    def test_ramo_locale_vince_sul_remoto_omonimo(self):
+        self.assertEqual(self.tips(heads="refs/heads/main a1 \n",
+                                   remotes="refs/remotes/origin/main a1 \n"),
+                         [("main", "a1")])
+
+    def test_symref_ignorato(self):
+        self.assertEqual(self.tips(remotes="refs/remotes/origin/HEAD a1 "
+                                            "refs/remotes/origin/main\n"),
+                         [])
+
+
 class ReadGraphParsingTest(unittest.TestCase):
     """P2-07: campi del log separati da SEP e ref senza unpacking fragile."""
 
