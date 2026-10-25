@@ -25,7 +25,7 @@ python3 {baseDir}/scripts/gitgraph.py [REPO] [-n 30] [-o FILE] [--md] [--png FIL
 | `--linear` | fila indiana, un solo ramo: ripiego se la ricostruzione esce sbagliata |
 | `--label-len N` | caratteri massimi del testo dell'etichetta, troncato a confine di parola con `…` (default 32; `0` = soggetto intero, 10-12 per grafi stretti); con più tag `+N` è accodato a parte |
 
-stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` lo stdout resta vuoto. Warning e diagnostica vanno su stderr. `--png` richiede `mmdc` e un Chromium: installazione e diagnosi in `references/png-setup.md`.
+stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` lo stdout resta vuoto. Una sola destinazione per invocazione: `--png` **vince** su `-o` e `--md`, `-o` vince su stdout — con `--png` un `-o FILE` viene ignorato senza avviso, quindi per avere PNG e `.md` invoca lo script due volte. Warning e diagnostica vanno su stderr. `--png` richiede `mmdc` e un Chromium: installazione e diagnosi in `references/png-setup.md`.
 
 ## Passi
 
@@ -47,6 +47,7 @@ stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` lo stdout re
 - `--png` dipende da `mmdc` e da un Chromium: se manca un pezzo lo script esce con il messaggio giusto (installazione e diagnosi in `references/png-setup.md`).
 - Nessuna pagina pubblicata: il rendering lo fa `mmdc` in locale, la preview di VS Code (estensione Mermaid Chart, richiede workspace trusted) o mermaid.live.
 - Nessun file `.md` viene scritto senza `-o`: l'agente sceglie il path e lo dice all'utente.
+- **Scritture**: nessun file di stato, nessuna cache, niente dentro il repo target. Lo script scrive solo dove glielo chiedi (`-o FILE`, `--png FILE`, qualunque path), più `in.mmd` e `puppeteer.json` dentro una `TemporaryDirectory` di sistema cancellata all'uscita. I file che crei restano: se serve pulizia, rimuovili tu.
 - Fila indiana con `--linear` o quando la finestra taglia i genitori di un merge.
 - Repo divergenti (locale `main` indietro rispetto a `origin/main`) producono due lane: è la storia reale, non un errore.
 

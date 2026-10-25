@@ -13,13 +13,18 @@ il commit ne ha più di uno: il primo più `+N`), i subject sono troncati a `--l
 testo. Riproducibile con
 `python3 skills/gitgraph/scripts/gitgraph.py <repo> -n 20 --label-len 12 --png out.png`.*
 
-Output possibili:
+Output possibili (comandi eseguiti dalla radice del pacchetto, `<repo>` = repository da analizzare):
 
 | Cosa | Comando | Destinazione |
 |---|---|---|
-| Mermaid puro | `python3 scripts/gitgraph.py <repo>` | incollabile su <https://mermaid.live> |
-| file `.md` con fence `mermaid` | `... -o grafo.md --md` | preview di VS Code (`Ctrl+Shift+V`) |
-| immagine | `... --png grafo.png` | report, Telegram, documenti |
+| Mermaid puro | `python3 skills/gitgraph/scripts/gitgraph.py <repo>` | incollabile su <https://mermaid.live> |
+| file `.md` con fence `mermaid` | `python3 skills/gitgraph/scripts/gitgraph.py <repo> -o grafo.md --md` | preview di VS Code (`Ctrl+Shift+V`) |
+| immagine | `python3 skills/gitgraph/scripts/gitgraph.py <repo> --png grafo.png` | report, Telegram, documenti |
+
+Precedenza delle destinazioni (una sola per invocazione): `--png` **vince** su `-o` e `--md`; `-o`
+vince su stdout. Con `--png` un eventuale `-o FILE` viene ignorato senza avviso (non viene nemmeno
+validato): per avere sia il PNG sia il `.md` esegui lo script due volte, una con `--png` e una con
+`-o grafo.md --md`.
 
 ## Requirements
 
@@ -125,7 +130,7 @@ python3 skills/gitgraph/scripts/gitgraph.py ~/un/repo -n 15 --png /tmp/grafo.png
 | `-n N` | commit massimi, default 30 |
 | `-o FILE` | scrive su file invece che su stdout |
 | `--md` | avvolge l'output nel fence ```` ```mermaid ```` |
-| `--png FILE` | renderizza il PNG con `mmdc` (largo 1600 px, sfondo bianco); niente stdout |
+| `--png FILE` | renderizza il PNG con `mmdc` (largo 1600 px, sfondo bianco); niente stdout, e ha la precedenza su `-o`/`--md` (vedi §Output possibili) |
 | `--linear` | fila indiana, un solo ramo: ripiego se la ricostruzione esce sbagliata |
 | `--label-len N` | caratteri massimi del testo dell'etichetta, troncato a confine di parola con `…` (default 32; `0` = soggetto intero); con più tag `+N` è accodato a parte |
 
@@ -165,7 +170,11 @@ senza averlo chiesto al proprietario.
 pi remove /percorso/pi-skill-gitgraph    # o: pi remove git:github.com/axxx75/pi-skill-gitgraph
 ```
 
-Nessun file scritto fuori dal repository target e da `/tmp`: non resta niente da pulire.
+Lo script non scrive nulla di nascosto: nessun file di stato, nessuna cache, nessun file dentro il
+repository target. Scrive solo dove glielo chiedi — `-o FILE` e `--png FILE`, con qualunque path,
+anche fuori dal repo — più due file temporanei in una `TemporaryDirectory` di sistema (`in.mmd`,
+`puppeteer.json`), cancellata all'uscita. Per l'uninstall basta rimuovere i file che hai creato tu:
+il pacchetto non lascia residui propri.
 
 ## License
 
