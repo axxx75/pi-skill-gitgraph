@@ -7,7 +7,7 @@ MMDC_VERSION=12.0.0   # versione usata per assets/example.png: diversa = WARN, n
 
 # git init -b richiede git >= 2.28, il supporto dichiarato parte da 2.20:
 # sotto soglia si crea il repo e si punta HEAD al ramo principale a mano
-init(){ dir=${1:-.}; git init -q -b main "$dir" 2>/dev/null \
+init(){ local dir=${1:-.}; git init -q -b main "$dir" 2>/dev/null \
           || { git init -q "$dir"; git -C "$dir" symbolic-ref HEAD refs/heads/main; }; }
 
 cd "$tmp" || exit 1

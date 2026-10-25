@@ -328,6 +328,11 @@ class ContractTextTest(unittest.TestCase):
                 with self.subTest(doc=doc, phrase=phrase):
                     self.assertIn(phrase, text)
 
+    def test_requisito_pi_dichiarato_nel_frontmatter(self):
+        frontmatter = self.read("skills", "gitgraph", "SKILL.md").split("---\n")[1]
+        line = next(l for l in frontmatter.splitlines() if l.startswith("compatibility:"))
+        self.assertIn("pi >= 1.4", line)
+
     def test_percorsi_chromium_allineati_alla_doc(self):
         doc = self.read("skills", "gitgraph", "references", "png-setup.md")
         for pattern in gitgraph.CHROME_PATTERNS:

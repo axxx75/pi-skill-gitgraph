@@ -35,7 +35,8 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   `commit id:` (non la direttiva `%%{init}%%` né i fence) e non usa più un path relativo.
 - P2-12: `package.json` ha `repository` e `engines` (`node >= 22.19.0`, requisito del runtime pi 1.4.0,
   che copre anche mmdc 12.0.0); `docs/packages.md` di pi non prevede un campo per il requisito minimo
-  di `pi`, quindi `pi >= 1.4` resta in README/SKILL. Nuovo `.gitattributes`
+  di `pi`, quindi `pi >= 1.4` sta nel front-matter `compatibility` di `SKILL.md` (con python3/git/mmdc),
+  ripetuto in README. Nuovo `.gitattributes`
   (`skills/gitgraph/assets/example.png binary`) e README che dichiara l'esempio un'**illustrazione,
   non un golden file**, con la ricetta esatta (mmdc 12.0.0 e Chromium non registrato).
 

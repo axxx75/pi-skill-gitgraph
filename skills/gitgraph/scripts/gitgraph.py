@@ -34,7 +34,8 @@ WARN_LOST = ("warning: {n} commit fuori dalle catene principali "
 WARN_DEFERRED = ("warning: {n} merge non ricostruiti "
                  "(serve una finestra piu' ampia: -n {window})\n")
 
-# Ordine di risoluzione di Chromium: unica fonte, references/png-setup.md §2 lo ripete
+# Candidati Chromium in ordine di preferenza: unica fonte; png-setup.md §2 li ripete e il
+# test ne verifica la presenza (non l'ordine)
 CHROME_PATTERNS = (
     "~/.pi/agent/skills/pi-skills/browser-tools/chrome/*/chrome-linux64/chrome",
     "~/.cache/puppeteer/chrome/*/chrome-linux64/chrome",
