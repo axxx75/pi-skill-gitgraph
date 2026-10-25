@@ -21,6 +21,10 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   perché più rami = più lento); nuova sezione «Limiti noti» con bare repo rifiutati e directory di
   output non create; i casi già risolti (tag con spazio, escaping) sono scritti nella forma
   definitiva, non come limiti.
+- P2-09: `selftest.sh` ora è fail-fast (`set -euo pipefail`), i file di commit usano un contatore
+  deterministico (niente `date +%s%N`) e `git init -b` ha il fallback senza `-b` per git < 2.28
+  (soglia dichiarata invariata a 2.20). Nuovi casi: `-n` (conteggio e rifiuto di `0`), repo a un
+  commit, repo vuoto, clone `--depth 1`. README §Verify dichiara anche cosa **non** è coperto.
 
 ### Note
 

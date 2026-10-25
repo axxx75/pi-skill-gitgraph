@@ -89,7 +89,8 @@ Dettagli e diagnosi: [`skills/gitgraph/references/png-setup.md`](skills/gitgraph
 bash skills/gitgraph/tests/selftest.sh
 ```
 
-Cosa fa: costruisce un repo usa-e-getta (ramo `feature/x`, un merge `--no-ff`, un tag), poi verifica
+Cosa fa: costruisce repo usa-e-getta (ramo `feature/x`, un merge `--no-ff`, un tag; poi un repo a
+un commit, un repo vuoto e un clone shallow) e verifica
 
 - prima riga = direttiva `%%{init:...}` e presenza di `gitGraph`;
 - `branch feature_x` e `merge feature_x id:` presenti (slash sanificato, merge ricostruito);
@@ -99,9 +100,25 @@ Cosa fa: costruisce un repo usa-e-getta (ramo `feature/x`, un merge `--no-ff`, u
 - con `--linear` l'output resta Mermaid valido: prima riga `%%{init:...}`, `gitGraph` presente, almeno un `commit id:`, anche con HEAD non risolto (ref puntato ma mai committato);
 - `--md` apre e chiude il fence, l'output raw **non** contiene fence;
 - un file, un path inesistente o un bare repo vengono rifiutati con exit 1 **e** il messaggio `non e' un repository git` (il testo, non solo l'exit code);
+- `-o` scrive un file byte-identico a stdout, senza `.tmp` orfani, e rifiuta una directory inesistente con una riga su stderr;
+- `-n` è davvero la finestra: `-n 2` dà esattamente 2 `commit id:`, `-n 0` esce con 2 e `serve -n >= 1`;
+- un repo a un solo commit produce un grafo con un commit; un repo vuoto esce con 1 e `nessun commit trovato`; un clone `--depth 1` produce un grafo valido;
+- escaping e parsing: `"`, `\`, `#`, backtick e caratteri di controllo nel subject o nel tag restano renderizzabili; un subject con `|` non rompe il log; un tag in formato inatteso esce con `tag non interpretabile`;
+- collisione di nomi sanificati (`feature/x` + `feature_x`): due lane distinte, warning su stderr;
 - `--png` produce un file non vuoto (se `mmdc` è installato, altrimenti `SKIP`).
 
+Lo script gira con `set -euo pipefail`: un comando che fallisce ferma il test (nessun falso verde) e
+`git init -b` ha un fallback senza `-b` per git < 2.28.
+
 Output atteso: `OK` e exit code 0. Qualunque altra cosa è un fallimento.
+
+**Copertura**: scenari sintetici costruiti all'istante, non un repo reale.
+**Non coperto**: (a) il fallback `git init` senza `-b` non è esercitato su un git moderno (il primo
+tentativo riesce sempre): è codice di compatibilità non provato; (b) l'aspetto del PNG (font,
+sovrapposizione e taglio delle etichette, contrasto) e le differenze fra renderer; (c) storie reali
+grandi, con molti rami/merge e ref remoti, dove `-n` e la ricostruzione delle lane degradano. Un `OK`
+qui significa «il contratto CLI verificato da questi casi funziona», non «ogni storia git produce il
+grafo giusto».
 
 ### CI
 
