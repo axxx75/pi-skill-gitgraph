@@ -23,8 +23,26 @@ import tempfile
 
 LABEL_LEN_DEFAULT = 32  # caratteri dell'etichetta, ellissi compresa
 PNG_SIZE = 1600  # larghezza del PNG renderizzato da mmdc
+WINDOW_DEFAULT = 30  # -n di default: commit letti da git log (finestra di ricostruzione)
 MAIN_NAMES = ("main", "master")  # trunk noti: ordine dei tip e fallback quando HEAD non risolve
 SEP = "\x1f"  # separatore dei campi del log: '|' e' un carattere legittimo in un subject
+
+# Warning su stderr = contratto macchina (SKILL.md, README): la frase resta invariata,
+# l'hint in coda dice cosa fare. Unica fonte: i test la verificano, non la riscrivono.
+WARN_LOST = ("warning: {n} commit fuori dalle catene principali "
+             "(grafo incompleto: rilancia con -n {window} o --linear)\n")
+WARN_DEFERRED = ("warning: {n} merge non ricostruiti "
+                 "(serve una finestra piu' ampia: -n {window})\n")
+
+# Ordine di risoluzione di Chromium: unica fonte, references/png-setup.md §2 lo ripete
+CHROME_PATTERNS = (
+    "~/.pi/agent/skills/pi-skills/browser-tools/chrome/*/chrome-linux64/chrome",
+    "~/.cache/puppeteer/chrome/*/chrome-linux64/chrome",
+    "~/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/google-chrome",
+)
 
 
 class GitError(RuntimeError):
@@ -107,15 +125,7 @@ def chrome_bin():
     if env and os.path.exists(env):
         return env
     # in ordine: browser-tools dell'ecosistema pi, cache puppeteer/playwright, chromium di sistema
-    patterns = [
-        "~/.pi/agent/skills/pi-skills/browser-tools/chrome/*/chrome-linux64/chrome",
-        "~/.cache/puppeteer/chrome/*/chrome-linux64/chrome",
-        "~/.cache/ms-playwright/chromium-*/chrome-linux/chrome",
-        "/usr/bin/chromium",
-        "/usr/bin/chromium-browser",
-        "/usr/bin/google-chrome",
-    ]
-    for pattern in patterns:
+    for pattern in CHROME_PATTERNS:
         hits = sorted(glob.glob(os.path.expanduser(pattern)))
         if hits:
             return hits[-1]
@@ -218,7 +228,7 @@ def read_graph(repo, n, linear=False):
 
 
 def render(commits, short, tags, tips, linear=False, label_len=LABEL_LEN_DEFAULT,
-           head="", warn=None) -> list[str]:
+           head="", warn=None, window=WINDOW_DEFAULT) -> list[str]:
     """commits/short/tags/tips gia' letti da git -> righe Mermaid (nessun I/O).
 
     Linear: una fila parents-first. Altrimenti Graph ricostruisce le lane nello stesso
@@ -227,7 +237,7 @@ def render(commits, short, tags, tips, linear=False, label_len=LABEL_LEN_DEFAULT
     # il trunk e' quello di HEAD: "main" resta solo il fallback dichiarato (HEAD non risolve,
     # oppure e' il literal "HEAD" di un checkout detached)
     trunk = head if head not in ("", "HEAD") else MAIN_NAMES[0]
-    g = Graph(commits, short, tags, label_len, warn, trunk)
+    g = Graph(commits, short, tags, label_len, warn, trunk, window)
     if linear:
         # ordine parents-first, senza rami: il nome serve solo all'etichetta del ramo
         g.header(slug(trunk))
@@ -247,10 +257,11 @@ class Graph:
     """Ricostruzione delle lane: ogni struttura mutata e' un campo, non una cattura di closure."""
 
     def __init__(self, commits, short, tags, label_len=LABEL_LEN_DEFAULT, warn=None,
-                 trunk=MAIN_NAMES[0]):
+                 trunk=MAIN_NAMES[0], window=WINDOW_DEFAULT):
         self.commits, self.short, self.tags = commits, short, tags
         self.label_len = label_len
         self.trunk = trunk  # ramo di ripiego quando nessun tip rivendica la radice
+        self.window = window  # solo per l'hint: -n raddoppiato nei warning
         self.say = warn or (lambda _msg: None)
         self.out = []
         self.owner = {}  # commit -> ramo che lo rivendica
@@ -409,13 +420,13 @@ class Graph:
         # copre un chiamante che inietta hash estranei (nessun conteggio negativo)
         lost = max(0, len(self.commits) - len(self.finished))
         if lost:
-            self.say(f"warning: {lost} commit fuori dalle catene principali\n")
+            self.say(WARN_LOST.format(n=lost, window=self.window * 2))
             self.switch(self.start_branch)
             for h in reversed(list(self.commits)):
                 if h not in self.finished:
                     self.commit_line(h)
         if self.deferred:
-            self.say(f"warning: {len(self.deferred)} merge non ricostruiti\n")
+            self.say(WARN_DEFERRED.format(n=len(self.deferred), window=self.window * 2))
         # un checkout finale non disegna nulla
         while self.out and self.out[-1].strip().startswith("checkout "):
             self.out.pop()
@@ -428,7 +439,7 @@ def main():
     """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("repo", nargs="?", default=".", help="path del repository")
-    ap.add_argument("-n", type=int, default=30,
+    ap.add_argument("-n", type=int, default=WINDOW_DEFAULT,
                     help="finestra di ricostruzione in commit (default 30): alzarla fa rientrare "
                          "i merge, piu' rami = piu' catene da percorrere")
     ap.add_argument("-o", metavar="FILE", help="scrive su file invece che su stdout")
@@ -455,7 +466,7 @@ def main():
     try:
         commits, short, tags, tips, head = read_graph(a.repo, a.n, a.linear)
         out = render(commits, short, tags, tips, linear=a.linear,
-                     label_len=a.label_len, head=head,
+                     label_len=a.label_len, head=head, window=a.n,
                      warn=lambda msg: sys.stderr.write(msg))
     except GitError as e:
         sys.exit(str(e))
@@ -469,7 +480,9 @@ def main():
         text = f"```mermaid\n{text}```\n"
     if a.o:
         write_atomic(a.o, text)
-        print(f"{len(out)} righe -> {a.o}", file=sys.stderr)
+        # conteggio dei soli commit, non delle direttive Mermaid; path assoluto: dice dov'e' il file
+        n_commits = sum(1 for line in out if "commit id:" in line)
+        print(f"{n_commits} commit -> {os.path.abspath(a.o)}", file=sys.stderr)
     else:
         sys.stdout.write(text)
 

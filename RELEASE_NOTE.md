@@ -29,6 +29,10 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   (nessuno script di install del pacchetto) in README e `references/png-setup.md`; `selftest.sh`
   confronta `mmdc --version` con `12.0.0` e, se diversa, lo dice su stderr proseguendo: è un avviso,
   non un gate. Nessuna promessa di riproducibilità byte-per-byte dell'asset.
+- P2-06: `WARN_LOST`, `WARN_DEFERRED` e `CHROME_PATTERNS` sono l'unica fonte (codice, test e doc);
+  la frase contrattuale dei due warning resta identica e riceve in coda l'hint operativo
+  (`-n 60` con il default 30). Il messaggio di `-o` diventa `N commit -> /path/assoluto`: conta i soli
+  `commit id:` (non la direttiva `%%{init}%%` né i fence) e non usa più un path relativo.
 
 ### Note
 

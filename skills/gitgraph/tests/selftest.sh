@@ -70,7 +70,10 @@ done
 
 # -o: parita' byte-identica con stdout, nessun .tmp orfano, path invalido = una riga su stderr
 o=$(python3 "$here/scripts/gitgraph.py" .) || { echo "FAIL: stdout exit non-zero"; exit 1; }
-python3 "$here/scripts/gitgraph.py" . -o "$tmp/out.mmd" 2>/dev/null || { echo "FAIL: -o exit non-zero"; exit 1; }
+omsg=$(python3 "$here/scripts/gitgraph.py" . -o "$tmp/out.mmd" 2>&1 >/dev/null) \
+  || { echo "FAIL: -o exit non-zero"; exit 1; }
+[ "$omsg" = "5 commit -> $tmp/out.mmd" ] \
+  || { echo "FAIL: -o, messaggio atteso '5 commit -> path assoluto', ricevuto: $omsg"; fail=1; }
 cmp -s "$tmp/out.mmd" <(printf '%s\n' "$o") || { echo "FAIL: -o diverso da stdout"; fail=1; }
 [ ! -e "$tmp/out.mmd.tmp" ] || { echo "FAIL: .tmp orfano dopo -o"; fail=1; }
 err=$(python3 "$here/scripts/gitgraph.py" . -o "$tmp/manca/out.mmd" 2>&1 >/dev/null) && rc=0 || rc=$?
@@ -229,6 +232,24 @@ shout=$(python3 "$here/scripts/gitgraph.py" "$tmp/shallow") \
 grep -qx 'gitGraph' <<<"$shout" || { echo "FAIL: shallow clone, manca gitGraph"; fail=1; }
 [ "$(grep -c 'commit id:' <<<"$shout")" -eq 1 ] \
   || { echo "FAIL: shallow clone, atteso 1 commit nella finestra"; fail=1; }
+
+# warning su stderr = contratto macchina: frase invariata + hint con la finestra suggerita (P2-06)
+warn_out=$(python3 - "$here/scripts" <<'PY'
+import sys
+sys.path.insert(0, sys.argv[1])
+import gitgraph
+
+g = gitgraph.Graph({"C": (["B"], "c"), "B": (["A"], "b"), "A": ([], "a")},
+                   {"C": "c", "B": "b", "A": "a"}, {},
+                   warn=lambda msg: print(msg, end=""))
+g.claim([])
+g.finished.add("A")   # scenario: catena percorsa solo in parte
+g.report_lost()
+PY
+) || { echo "FAIL: warning forzato, exit non-zero"; exit 1; }
+grep -q 'warning: 2 commit fuori dalle catene principali (grafo incompleto: rilancia con -n 60 o --linear)' \
+  <<<"$warn_out" \
+  || { echo "FAIL: warning commit persi, testo/hint inatteso: $warn_out"; fail=1; }
 
 if command -v mmdc >/dev/null; then
   # solo avviso: un'altra 12.x cambia il render ma il path --png deve restare installabile

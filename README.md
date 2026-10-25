@@ -157,7 +157,10 @@ python3 skills/gitgraph/scripts/gitgraph.py ~/un/repo -n 15 --png /tmp/grafo.png
 | `--linear` | fila indiana, un solo ramo: ripiego se la ricostruzione esce sbagliata |
 | `--label-len N` | caratteri massimi del testo dell'etichetta, troncato a confine di parola con `…` (default 32, ellissi compresa, `0` = soggetto intero); con più tag `+N` è accodato a parte; l'escaping può allungare la stringa (es. `#` → `#35;`) |
 
-`stdout` è Mermaid puro; i warning vanno su `stderr`.
+`stdout` è Mermaid puro; i warning vanno su `stderr`. La frase dei due warning è contratto con
+l'agente (la skill reagisce a quelle stringhe) e resta invariata: dopo, tra parentesi, arriva l'hint
+operativo con il `-n` suggerito (`-n 60` con il default 30). Con `-o` il messaggio di successo su
+`stderr` è `N commit -> /path/assoluto`: conta i soli `commit id:`, non le direttive Mermaid.
 
 **Etichette e leggibilità:** Mermaid disegna le etichette con una spaziatura fissa (~40 unità SVG
 per commit) e non la espone in configurazione: oltre ~8 caratteri le etichette di commit adiacenti
