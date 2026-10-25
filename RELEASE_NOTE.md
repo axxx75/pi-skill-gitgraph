@@ -57,12 +57,16 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   `origin` si usano i remoti presenti): i fork/upstream non aprono più lane e i loro commit non
   entrano nella finestra
   (che ora è `git log` sui soli ref tenuti più i tag, non `--all`), quindi non finiscono appesi alla
-  lane corrente. Il filtro è per nome e precede il dedup per SHA: una lista `origin` svuotata dal
-  dedup (clone con `origin/main` = `main`) non fa più scattare il ripiego sui remoti. Misura su 216
+  lane corrente. La scelta è per nome e il dedup per SHA vale **solo sul set scelto** (locali +
+  `origin`, oppure tutti i remoti presenti se `origin` non c'è), dopo la scelta: una lista `origin`
+  svuotata dal dedup (clone con `origin/main` = `main`) non fa scattare il ripiego sui remoti e un
+  ref di fork con lo **stesso** SHA non può scartare quello di `origin` (con `origin` esistente il
+  tip spariva da `revs`, quindi lane e commit senza alcun warning). Una `origin` ridotta alla sola
+  symref `HEAD` conta come esistente: il ripiego non scatta. Misura su 216
   ref (6 locali, 10 origin, 200 upstream, SHA distinti, lane contate dopo il dedup): 215 → 15 lane a
   `-n 300`, ~0,06 s contro ~0,05 s su un repo a 4 ref (il vecchio costo `N rev-list` non esiste più
   dal refactor P0-04). Nella forma del fork-clone (202 ref: `main` locale, `origin/main` = `main`,
-  200 upstream) la stessa finestra dà 1 commit e 0 lane upstream in ~0,05 s. Nessun `rev-list
+  200 upstream) la stessa finestra dà 1 lane e 0 lane upstream. Nessun `rev-list
   --stdin`: non serve. Limite e numeri dichiarati in `SKILL.md` (Limiti) e README.
 
 ### Note

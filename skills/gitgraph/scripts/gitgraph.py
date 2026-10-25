@@ -130,15 +130,17 @@ def branch_tips(repo):
 
     Dei remoti si tengono solo i ref di `origin` (se ne esistono): i rami degli altri
     remoti (fork/upstream, possono essere centinaia) aprirebbero lane che non
-    appartengono alla storia del repo. Il filtro e' per nome e precede il dedup per
-    SHA, che non deve mai svuotare `origin`: in un clone normale `origin/main` ha lo
-    stesso commit di `main` e scartarlo come duplicato faceva scattare il ripiego
-    "tutti i remoti", riammettendo upstream. Il ripiego scatta solo se sotto
-    `refs/remotes/origin/` non esiste alcun ref. Il limite e' dichiarato in SKILL.md;
-    il costo del giro resta O(ref) in un solo `for-each-ref` per namespace, non un
-    processo per ramo.
+    appartengono alla storia del repo. La scelta e' per nome e il dedup per SHA
+    viene dopo, sul solo set scelto: prima si prendono i ref (locali + `origin`,
+    oppure tutti i remoti presenti se `origin` non c'e'), poi si deduplica quel set. Cosi' un ref di un altro
+    remoto non puo' scartare il ref di `origin` con lo stesso SHA, e in un clone
+    normale `origin/main` = `main` non fa scattare il ripiego "tutti i remoti".
+    Il ripiego scatta solo se sotto `refs/remotes/origin/` non esiste alcun ref
+    (nemmeno una `origin/HEAD` symref: il remote c'e' comunque). Il limite e'
+    dichiarato in SKILL.md; il costo del giro resta O(ref) in un solo
+    `for-each-ref` per namespace, non un processo per ramo.
     """
-    local, origin, other, seen = [], [], [], set()
+    local, origin, other = [], [], []
     has_origin = False
     for ns in ("refs/heads/", "refs/remotes/"):
         raw = git(repo, "for-each-ref", "--sort=-committerdate",
@@ -146,24 +148,28 @@ def branch_tips(repo):
         for line in raw.splitlines():
             ref, _, rest = line.partition(" ")
             sha, _, symref = rest.partition(" ")
-            if not sha or symref.strip():
+            if not sha:
                 continue
             name = ref[len(ns):]
             remote = ns == "refs/remotes/"
-            if remote and not name.startswith("origin/"):
-                bucket = other
-            elif remote:
-                has_origin = True  # prima del dedup: decide solo se origin esiste
+            if not remote:
+                bucket = local
+            elif name.startswith("origin/"):
+                has_origin = True  # prima del filtro symref: origin esiste anche da solo HEAD
                 bucket = origin
             else:
-                bucket = local
-            if sha in seen:
-                continue
-            seen.add(sha)
+                bucket = other
+            if symref.strip():
+                continue  # un symref non e' un tip
             bucket.append((name, sha))
+    # dedup per SHA sul solo set scelto: un ramo locale vince sul remoto omonimo
+    selected, seen = [], set()
+    for tip in local + (origin if has_origin else other):
+        if tip[1] not in seen:
+            seen.add(tip[1])
+            selected.append(tip)
     # il ramo principale rivendica per primo la sua catena first-parent
-    return sorted(local + (origin if has_origin else other),
-                  key=lambda t: t[0] not in MAIN_NAMES)
+    return sorted(selected, key=lambda t: t[0] not in MAIN_NAMES)
 
 
 def chrome_bin():

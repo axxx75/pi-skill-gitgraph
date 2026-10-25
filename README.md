@@ -218,8 +218,9 @@ Comportamenti verificabili che non si aggirano dai flag:
 - **Directory di output non create**: `-o` e `--png` richiedono che la directory esista già
   (`directory inesistente`, exit 1): lo script non crea cartelle. Workaround: `mkdir -p` prima.
 - **Rami remoti non-`origin`**: solo i ref di `origin` producono lane; i fork/upstream restano fuori
-  dal grafo (senza alcun ref `origin` si usano i remoti presenti). Il filtro è per nome e precede il
-  dedup per SHA, quindi `origin/main` = `main` non fa scattare il ripiego sui remoti. Non c'è un
+  dal grafo (senza alcun ref `origin` si usano i remoti presenti). La scelta è per nome e il dedup
+  per SHA vale solo sul set scelto, quindi `origin/main` = `main` non fa scattare il ripiego e un
+  fork con lo stesso SHA non scarta il ref di `origin`. Non c'è un
   flag per cambiarlo: se serve quella vista, rinomina il remoto in `origin`.
 - **Commit solo da tag**: i tag sono ref legittimi e restano nella finestra (`git log --tags`): un
   commit raggiungibile solo da un tag compare nel grafo, con il tag come etichetta.

@@ -467,6 +467,19 @@ class BranchTipsTest(unittest.TestCase):
                                             "refs/remotes/origin/main a1 \n"),
                          [("origin/main", "a1")])
 
+    def test_fork_con_lo_stesso_sha_non_scarta_origin(self):
+        # retry 3: il dedup per SHA vale sul set scelto (locali + origin), non fra i bucket
+        tips = self.tips(heads="refs/heads/main a1 \n",
+                         remotes="refs/remotes/fork/feature a2 \n"
+                                 "refs/remotes/origin/feature a2 \n")
+        self.assertEqual(tips, [("main", "a1"), ("origin/feature", "a2")])
+
+    def test_sola_origin_head_symref_conta_come_origin(self):
+        # retry 3 (a): origin esiste anche se ne resta solo la symref HEAD
+        self.assertEqual(self.tips(remotes="refs/remotes/origin/HEAD a1 refs/remotes/origin/gone\n"
+                                           "refs/remotes/fork/feature a2 \n"),
+                         [])
+
 
 class RefWindowIntTest(unittest.TestCase):
     """P2-03 retry 2: finestra sui ref tenuti, su repository git veri."""
@@ -523,6 +536,41 @@ class RefWindowIntTest(unittest.TestCase):
         self.assertIn(only_tag, commits)
         out = gitgraph.render(commits, {h: h[:7] for h in commits}, tags, tips)
         self.assertIn(f'commit id: "{only_tag[:7]}"', "\n".join(out))
+
+    def test_fork_con_lo_stesso_sha_non_toglie_la_lane_di_origin(self):
+        # retry 3: fork/* iterato prima di origin/* con lo stesso SHA non deve scartare
+        # il ref di origin, altrimenti lane e commit spariscono senza warning
+        src = self.init("src")
+        self.commit(src, "uno")
+        self.g(src, "checkout", "-q", "-b", "feature")
+        feat = self.commit(src, "feature")
+        self.g(src, "checkout", "-q", "main")
+        work = self.path("work")
+        gitgraph.git(self.tmp.name, "clone", "-q", src, work)
+        self.g(work, "remote", "add", "fork", src)
+        self.g(work, "fetch", "-q", "fork")
+
+        commits, _, _, tips, _ = gitgraph.read_graph(work, 300)
+        self.assertIn(("origin/feature", feat), tips)
+        self.assertIn(feat, commits)
+        self.assertEqual([r for r, _ in tips if r.startswith("fork")], [])
+        out = "\n".join(gitgraph.render(commits, {h: h[:7] for h in commits}, {}, tips,
+                                        head="main"))
+        self.assertIn("branch origin_feature", out)
+
+    def test_fork_con_sha_diverso_resta_fuori_dalla_finestra(self):
+        src = self.init("src")
+        self.commit(src, "uno")
+        work = self.path("work")
+        gitgraph.git(self.tmp.name, "clone", "-q", src, work)
+        fork = self.init("fork")
+        only = self.commit(fork, "solo fork")
+        self.g(work, "remote", "add", "fork", fork)
+        self.g(work, "fetch", "-q", "fork")
+
+        commits, _, _, tips, _ = gitgraph.read_graph(work, 300)
+        self.assertNotIn(only, commits)
+        self.assertEqual([r for r, _ in tips], ["main"])
 
 
 class ReadGraphParsingTest(unittest.TestCase):
