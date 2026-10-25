@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Storia git -> Mermaid gitGraph (stdout, da incollare su https://mermaid.live)."""
+"""Storia git -> Mermaid gitGraph: rami, fork e merge ricostruiti.
+
+Destinazioni, in ordine di precedenza: --png FILE (render locale con mmdc, niente stdout) > -o
+FILE (file, avvolto nel fence ```mermaid con --md) > stdout (Mermaid puro). Con --png un -o FILE
+viene ignorato senza avviso. --linear disattiva la ricostruzione: soli commit in ordine
+parents-first. Tutto locale: nessuna chiamata di rete; l'unico servizio esterno e' mermaid.live,
+e solo se ci incolli il grafo. Dettagli: README.md.
+"""
 
 from __future__ import annotations
 
