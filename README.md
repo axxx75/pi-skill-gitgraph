@@ -9,8 +9,8 @@ rendering PNG locale.
 *Esempio generato da questo pacchetto: `--png` su un repo con due rami e due merge, `--label-len 12`
 per un grafo stretto. I merge portano l'id del commit di merge, i tag git compaiono come `tag:` (se
 il commit ne ha più di uno: il primo più `+N`), i subject sono troncati a `--label-len` caratteri
-(default 32) a confine di parola con `…`, con taglio duro se il confine lascerebbe meno di metà del
-testo. Riproducibile con
+(default 32, **ellissi `…` compresa**) a confine di parola, con taglio duro se il confine
+lascerebbe meno di metà del testo. Riproducibile con
 `python3 skills/gitgraph/scripts/gitgraph.py <repo> -n 20 --label-len 12 --png out.png`.*
 
 Output possibili (comandi eseguiti dalla radice del pacchetto, `<repo>` = repository da analizzare):
@@ -21,10 +21,10 @@ Output possibili (comandi eseguiti dalla radice del pacchetto, `<repo>` = reposi
 | file `.md` con fence `mermaid` | `python3 skills/gitgraph/scripts/gitgraph.py <repo> -o grafo.md --md` | preview di VS Code (`Ctrl+Shift+V`) |
 | immagine | `python3 skills/gitgraph/scripts/gitgraph.py <repo> --png grafo.png` | report, Telegram, documenti |
 
-Precedenza delle destinazioni (una sola per invocazione): `--png` **vince** su `-o` e `--md`; `-o`
-vince su stdout. Con `--png` un eventuale `-o FILE` viene ignorato senza avviso (non viene nemmeno
-validato): per avere sia il PNG sia il `.md` esegui lo script due volte, una con `--png` e una con
-`-o grafo.md --md`.
+Destinazioni esclusive: `--png` **non si combina** con `-o` né con `--md` (errore, exit 2: scegli
+una destinazione); `-o` con `--md` resta valido (fence nel file), `-o` da sola scrive Mermaid puro,
+`--md` da sola manda il fence su stdout. Per avere sia il PNG sia il `.md` esegui lo script due
+volte, una con `--png` e una con `-o grafo.md --md`.
 
 ## Requirements
 
@@ -98,7 +98,7 @@ Cosa fa: costruisce un repo usa-e-getta (ramo `feature/x`, un merge `--no-ff`, u
 - numero di `commit id:` esatto (5);
 - con `--linear` l'output resta Mermaid valido: prima riga `%%{init:...}`, `gitGraph` presente, almeno un `commit id:`, anche con HEAD non risolto (ref puntato ma mai committato);
 - `--md` apre e chiude il fence, l'output raw **non** contiene fence;
-- un file che non è un repo viene rifiutato;
+- un file, un path inesistente o un bare repo vengono rifiutati con exit 1 **e** il messaggio `non e' un repository git` (il testo, non solo l'exit code);
 - `--png` produce un file non vuoto (se `mmdc` è installato, altrimenti `SKIP`).
 
 Output atteso: `OK` e exit code 0. Qualunque altra cosa è un fallimento.
@@ -127,12 +127,12 @@ python3 skills/gitgraph/scripts/gitgraph.py ~/un/repo -n 15 --png /tmp/grafo.png
 | Opzione | Significato |
 |---|---|
 | `REPO` | path del repository (default `.`) |
-| `-n N` | commit massimi, default 30 |
+| `-n N` | finestra di ricostruzione in commit, default 30 (vedi §`-n`: finestra di ricostruzione) |
 | `-o FILE` | scrive su file invece che su stdout |
 | `--md` | avvolge l'output nel fence ```` ```mermaid ```` |
-| `--png FILE` | renderizza il PNG con `mmdc` (largo 1600 px, sfondo bianco); niente stdout, e ha la precedenza su `-o`/`--md` (vedi §Output possibili) |
+| `--png FILE` | renderizza il PNG con `mmdc` (largo 1600 px, sfondo bianco); niente stdout; incompatibile con `-o`/`--md` (exit 2), vedi §Output possibili |
 | `--linear` | fila indiana, un solo ramo: ripiego se la ricostruzione esce sbagliata |
-| `--label-len N` | caratteri massimi del testo dell'etichetta, troncato a confine di parola con `…` (default 32; `0` = soggetto intero); con più tag `+N` è accodato a parte |
+| `--label-len N` | caratteri massimi del testo dell'etichetta, troncato a confine di parola con `…` (default 32, ellissi compresa, `0` = soggetto intero); con più tag `+N` è accodato a parte; l'escaping può allungare la stringa (es. `#` → `#35;`) |
 
 `stdout` è Mermaid puro; i warning vanno su `stderr`.
 
@@ -145,6 +145,39 @@ leggibile resta `--label-len` contenuto (10-12) e/o `-n` ridotto, accettando sub
 Un merge si ricostruisce solo con **entrambi i genitori** nella finestra di commit: se `stderr`
 segnala `commit fuori dalle catene principali` o `merge non ricostruiti`, rilancia con `-n` più alto.
 
+## `-n`: finestra di ricostruzione
+
+`-n` (default 30) non è un "numero massimo di commit": è la **finestra di ricostruzione**. È il
+numero di commit che `git log --all --topo-order` restituisce, e la ricostruzione delle lane lavora
+solo su quelli; la catena first-parent di ogni tip viene percorsa **dentro** la finestra. Per questo
+alzare `-n` "aggiusta" il grafo: fa rientrare i genitori di un merge, che senza entrambi non è
+ricostruibile (e il commit finisce in una lane laterale o in un warning). Il costo cresce con i
+rami: più tip = più catene da percorrere e due `git for-each-ref` su tutti i ref, quindi su un repo
+con molti rami/ref remoti conviene partire bassi e alzare solo se `stderr` segnala merge non
+ricostruiti. `-n < 1` è rifiutato (exit 2): non esiste una finestra vuota.
+
+## Limiti noti
+
+Comportamenti verificabili che non si aggirano dai flag:
+
+- **Bare repo rifiutati**: in un bare repo `--is-inside-work-tree` è `false`, quindi lo script esce
+  con `non e' un repository git` (exit 1). Non è un guasto: senza worktree non c'è una storia da
+  disegnare. Workaround: clonare il repo (`git clone <path>`) e passare il clone.
+- **Directory di output non create**: `-o` e `--png` richiedono che la directory esista già
+  (`directory inesistente`, exit 1): lo script non crea cartelle. Workaround: `mkdir -p` prima.
+- **Una destinazione per invocazione**: `--png` è incompatibile con `-o`/`--md` (exit 2); per avere
+  sia il PNG sia il `.md` esegui lo script due volte.
+
+Casi **risolti** — comportamento definitivo, non più limiti:
+
+- **Tag con spazio** (`release 1.0`): git non li crea (`check-ref-format`); se un ref arriva
+  comunque in un formato inatteso lo script esce con `tag non interpretabile: <riga>` (exit 1), non
+  con un traceback. Un subject con `|` non confonde più il parsing del log (separatore di campo
+  esplicito).
+- **Escaping Mermaid**: `"`, `\`, `#` e backtick sono neutralizzati (`'`, `#92;`, `#35;`, `#96;`) e
+  i caratteri di controllo diventano `#65533;`, in un unico punto (`escape()`): il grafo resta
+  renderizzabile anche con subject ostili.
+
 ## Troubleshooting
 
 | Sintomo | Causa | Rimedio |
@@ -152,7 +185,7 @@ segnala `commit fuori dalle catene principali` o `merge non ricostruiti`, rilanc
 | `mmdc non trovato` | `mmdc` non nel `PATH` | vedi §Install: symlink in `~/bin` o `PATH` che include `~/.local/bin` |
 | `chromium non trovato` | nessun Chromium nei percorsi noti | `export PUPPETEER_EXECUTABLE_PATH=/path/al/chrome` |
 | `mmdc fallito: ...` | Chromium incompatibile o `--size` assente (major vecchia) | verifica `mmdc --version` e `mmdc --help` |
-| `non e' un repository git` | path sbagliato o sottodirectory di un worktree | passa la radice del repo |
+| `non e' un repository git` | path sbagliato, non un repo, un bare repo o una sottodirectory senza worktree | passa la radice del repo (con `.git`): un bare repo non ha una storia da disegnare |
 | Grafo "a fila indiana" | finestra `-n` troppo piccola, merge fuori | `-n` più alto, o `--linear` se vuoi davvero la fila |
 | Etichette che si sovrappongono / si tagliano nel PNG | spaziatura fissa di Mermaid gitGraph (~40 unità per commit), non configurabile | `--label-len` contenuto (10-12) o `-n` ridotto; il PNG già renderizzato non è modificabile dallo script |
 | Repo con `main` divergente da `origin/main` | due lane: è la storia reale | nessuna azione |

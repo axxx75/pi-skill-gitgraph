@@ -9,8 +9,35 @@ Le versioni precedenti sono ricostruibili dalla storia git.
 - P1-03: un solo meccanismo di avanzamento in `settle()`; `deferred` è un `set` di diagnostica,
   niente doppia lista da tenere allineata. Warning dei commit persi derivato da
   `max(0, len(commits) - len(finished))`.
+- P2-04: costanti nominate (`MAIN_NAMES`, `PNG_SIZE`, `LABEL_LEN_DEFAULT`) al posto dei valori
+  sparsi; trunk preso dal nome reale di `HEAD` con fallback dichiarato; `--png` esclusivo con
+  `-o`/`--md` e `-n < 1` rifiutato con `ap.error`; `render_png()` perde il parametro `size`,
+  che nessun chiamante passava.
+- P2-05: `is_worktree()` emette davvero `non e' un repository git` (su un path inesistente o un
+  file l'errore grezzo di git usciva prima); doc allineata al troncamento reale (l'ellissi `…`
+  sta dentro `--label-len`, non oltre); `selftest.sh` verifica il testo del messaggio, non solo
+  l'exit code.
+- P2-14: `-n` documentato come **finestra di ricostruzione** (perché alzarlo ricostruisce i merge e
+  perché più rami = più lento); nuova sezione «Limiti noti» con bare repo rifiutati e directory di
+  output non create; i casi già risolti (tag con spazio, escaping) sono scritti nella forma
+  definitiva, non come limiti.
 
 ### Note
+
+- **Doc, non codice (P2-14).** Nessuna modifica di comportamento: la precedenza dei flag del
+  README/SKILL è già stata riscritta in P2-04 (rifiuto di `--png` con `-o`/`--md`), qui si
+  documentano `-n` e i limiti reali verificati con lo script.
+- **Messaggio raggiungibile (P2-05).** Un path inesistente, un file o un bare repo ora escono con
+  `non e' un repository git` (exit 1, invariato), non più con `git rev-parse ...: fatal: ...`.
+  Il contratto di `--label-len` è "N caratteri, ellissi compresa": il vecchio `32 + "..." = 35`
+  non esiste più da quando `label()` tronca dentro il limite, e README/SKILL lo dicono così.
+- **Cambio di comportamento (P2-04).** `--png` insieme a `-o` oppure a `--md` ora è un errore
+  (`ap.error`, exit 2, nessun file scritto) invece dello scarto silenzioso di `-o`/`--md`; `-n < 1`
+  risponde `serve -n >= 1` invece del fuorviante `nessun commit trovato`. `-o` con `--md` resta
+  valido. La lane di partenza prende il nome reale di HEAD quando nessun tip rivendica la radice
+  della finestra (fallback `main` solo se HEAD non risolve o è detached): su un trunk `develop`
+  non compare più `mainBranchName: main` per un ramo inesistente. Se HEAD è su un ramo di feature
+  e la radice è fuori dalla finestra `-n`, la lane di partenza porta il nome di quel ramo.
 
 - **Cambio semantico dichiarato (P1-03).** Il passaggio di `deferred` da lista a `set` deduplica:
   un commit con lo stesso genitore ripetuto (es. `c00 -> c02, c02`, quindi due volte in
