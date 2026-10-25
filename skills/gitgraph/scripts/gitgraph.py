@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Storia git -> Mermaid gitGraph: rami, fork e merge ricostruiti.
 
-Destinazioni, in ordine di precedenza: --png FILE (render locale con mmdc, niente stdout) > -o
-FILE (file, avvolto nel fence ```mermaid con --md) > stdout (Mermaid puro). Con --png un -o FILE
-viene ignorato senza avviso. --linear disattiva la ricostruzione: soli commit in ordine
-parents-first. Tutto locale: nessuna chiamata di rete; l'unico servizio esterno e' mermaid.live,
-e solo se ci incolli il grafo. Dettagli: README.md.
+Destinazioni, esclusive: --png FILE (render locale con mmdc, niente stdout) oppure -o FILE (file,
+avvolto nel fence ```mermaid con --md) oppure stdout (Mermaid puro, col fence con --md). --png
+non si combina con -o/--md: chiedere due destinazioni e' un errore (exit 2), non uno scarto
+silenzioso. --linear disattiva la ricostruzione: soli commit in ordine parents-first. Tutto
+locale: nessuna chiamata di rete; l'unico servizio esterno e' mermaid.live, e solo se ci incolli
+il grafo. Dettagli: README.md.
 """
 
 from __future__ import annotations
@@ -20,7 +21,9 @@ import subprocess
 import sys
 import tempfile
 
-MAX_SUBJECT = 32
+LABEL_LEN_DEFAULT = 32  # caratteri dell'etichetta, ellissi compresa
+PNG_SIZE = 1600  # larghezza del PNG renderizzato da mmdc
+MAIN_NAMES = ("main", "master")  # trunk noti: ordine dei tip e fallback quando HEAD non risolve
 SEP = "\x1f"  # separatore dei campi del log: '|' e' un carattere legittimo in un subject
 
 
@@ -58,7 +61,7 @@ def escape(text):
     return "".join(out)
 
 
-def label(text, limit=MAX_SUBJECT):
+def label(text, limit=LABEL_LEN_DEFAULT):
     """Soggetto su una riga (spazi collassati, escape Mermaid), troncato a `limit` DOPO la
     normalizzazione, a confine di parola con ellissi (limit <= 0: intero).
 
@@ -89,7 +92,7 @@ def branch_tips(repo):
             seen.add(sha)
             tips.append((ref[len(ns):], sha))
     # il ramo principale rivendica per primo la sua catena first-parent
-    return sorted(tips, key=lambda t: t[0] not in ("main", "master"))
+    return sorted(tips, key=lambda t: t[0] not in MAIN_NAMES)
 
 
 def chrome_bin():
@@ -113,7 +116,7 @@ def chrome_bin():
     return None
 
 
-def render_png(mermaid, out, size=1600):
+def render_png(mermaid, out):
     """Mermaid -> PNG via mmdc; esce con una riga se mmdc o Chromium mancano.
 
     --no-sandbox nel puppeteer.json: il Chromium locale gira in container/CI dove il
@@ -133,7 +136,7 @@ def render_png(mermaid, out, size=1600):
             json.dump({"executablePath": chrome,
                        "args": ["--no-sandbox", "--disable-setuid-sandbox"]}, f)
         r = subprocess.run([mmdc, "-i", src, "-o", out, "-p", cfg,
-                            "--size", str(size), "-b", "white", "-q"],
+                            "--size", str(PNG_SIZE), "-b", "white", "-q"],
                            capture_output=True, text=True)
         if r.returncode != 0 or not os.path.exists(out):
             sys.exit(f"mmdc fallito: {r.stderr.strip() or r.stdout.strip()}")
@@ -201,24 +204,27 @@ def read_graph(repo, n, linear=False):
         kind, tag, obj, deref = fields + [""] * (4 - len(fields))
         tags.setdefault(deref if kind == "tag" else obj, []).append(tag)
 
+    # HEAD puo' non risolvere (ref puntato ma mai committato): non e' fatale
+    head = git(repo, "rev-parse", "--abbrev-ref", "HEAD", strict=False).strip()
     if linear:
-        # HEAD puo' non risolvere (ref puntato ma mai committato): non e' fatale
-        return commits, short, tags, [], git(
-            repo, "rev-parse", "--abbrev-ref", "HEAD", strict=False).strip()
-    return commits, short, tags, branch_tips(repo), ""
+        return commits, short, tags, [], head
+    return commits, short, tags, branch_tips(repo), head
 
 
-def render(commits, short, tags, tips, linear=False, label_len=MAX_SUBJECT,
+def render(commits, short, tags, tips, linear=False, label_len=LABEL_LEN_DEFAULT,
            head="", warn=None) -> list[str]:
     """commits/short/tags/tips gia' letti da git -> righe Mermaid (nessun I/O).
 
     Linear: una fila parents-first. Altrimenti Graph ricostruisce le lane nello stesso
     ordine di sempre (header, walk, settle, report_lost); lo stato vive sull'istanza.
     """
-    g = Graph(commits, short, tags, label_len, warn)
+    # il trunk e' quello di HEAD: "main" resta solo il fallback dichiarato (HEAD non risolve,
+    # oppure e' il literal "HEAD" di un checkout detached)
+    trunk = head if head not in ("", "HEAD") else MAIN_NAMES[0]
+    g = Graph(commits, short, tags, label_len, warn, trunk)
     if linear:
         # ordine parents-first, senza rami: il nome serve solo all'etichetta del ramo
-        g.header(slug("main" if head in ("", "HEAD") else head))
+        g.header(slug(trunk))
         for h in reversed(list(commits)):
             g.commit_line(h)
         return g.out
@@ -234,9 +240,11 @@ def render(commits, short, tags, tips, linear=False, label_len=MAX_SUBJECT,
 class Graph:
     """Ricostruzione delle lane: ogni struttura mutata e' un campo, non una cattura di closure."""
 
-    def __init__(self, commits, short, tags, label_len=MAX_SUBJECT, warn=None):
+    def __init__(self, commits, short, tags, label_len=LABEL_LEN_DEFAULT, warn=None,
+                 trunk=MAIN_NAMES[0]):
         self.commits, self.short, self.tags = commits, short, tags
         self.label_len = label_len
+        self.trunk = trunk  # ramo di ripiego quando nessun tip rivendica la radice
         self.say = warn or (lambda _msg: None)
         self.out = []
         self.owner = {}  # commit -> ramo che lo rivendica
@@ -308,7 +316,7 @@ class Graph:
 
         roots = [h for h in self.commits if not self.parents_of(h)]
         self.start = roots[-1] if roots else next(reversed(self.commits))
-        self.start_branch = self.owner.get(self.start, "main")
+        self.start_branch = self.owner.get(self.start, self.trunk)
         # stato in un solo dominio (nomi Mermaid): lane corrente + lane gia' emesse
         first = self.uname(self.start_branch)
         self.state = {"cur": first, "made": {first}}
@@ -414,7 +422,9 @@ def main():
     """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("repo", nargs="?", default=".", help="path del repository")
-    ap.add_argument("-n", type=int, default=30, help="numero massimo di commit (default 30)")
+    ap.add_argument("-n", type=int, default=30,
+                    help="finestra di ricostruzione in commit (default 30): alzarla fa rientrare "
+                         "i merge, piu' rami = piu' catene da percorrere")
     ap.add_argument("-o", metavar="FILE", help="scrive su file invece che su stdout")
     ap.add_argument("--png", metavar="FILE",
                     help="renderizza un PNG con mmdc (chromium gia' presente, nessun download)")
@@ -422,12 +432,17 @@ def main():
                     help="avvolge l'output in un fence ```mermaid (file .md per la preview)")
     ap.add_argument("--linear", action="store_true",
                     help="fila indiana: un solo ramo, nessuna ricostruzione dei merge")
-    ap.add_argument("--label-len", type=int, default=MAX_SUBJECT,
+    ap.add_argument("--label-len", type=int, default=LABEL_LEN_DEFAULT,
                     help="caratteri massimi per etichetta, troncata a confine di parola "
                          "(default 32, 0 = soggetto intero)")
     a = ap.parse_args()
+    if a.n < 1:
+        ap.error("serve -n >= 1")
+    if a.png and (a.o or a.md):
+        # due destinazioni sono un errore: -o/--md non vanno piu' scartati in silenzio
+        ap.error("--png non combinabile con -o/--md: scegli una destinazione")
     if a.png:
-        check_out(a.png)  # --png vince su -o, che main() ignora: non deve bloccare
+        check_out(a.png)
     elif a.o:
         check_out(a.o)
 

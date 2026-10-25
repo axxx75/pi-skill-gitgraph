@@ -6,6 +6,8 @@ non dipendono da git ne' dal filesystem (unica eccezione: il caso GitError).
     python3 -m unittest discover -s skills/gitgraph/tests
 """
 
+import contextlib
+import io
 import os
 import sys
 import tempfile
@@ -239,6 +241,69 @@ class EscapeTest(unittest.TestCase):
                          ["fix: rotella 2/3 (ok)"])
 
 
+class FlagPolicyTest(unittest.TestCase):
+    """P2-04: --png e' esclusivo con -o/--md, -n >= 1, e si rifiuta prima di leggere git."""
+
+    def rejected(self, *args):
+        argv = ["gitgraph.py", *args]
+        with mock.patch.object(gitgraph.sys, "argv", argv), \
+                mock.patch.object(gitgraph, "read_graph") as read, \
+                mock.patch.object(gitgraph, "render_png") as render_png, \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            with self.assertRaises(SystemExit) as cm:
+                gitgraph.main()
+        read.assert_not_called()
+        render_png.assert_not_called()
+        return cm.exception.code, err.getvalue()
+
+    def test_png_con_o_e_un_errore(self):
+        code, err = self.rejected(".", "--png", "g.png", "-o", "g.md")
+        self.assertEqual(code, 2)  # exit di argparse: nessun file scritto
+        self.assertIn("non combinabile con -o/--md", err)
+
+    def test_png_con_md_e_un_errore(self):
+        code, err = self.rejected(".", "--png", "g.png", "--md")
+        self.assertEqual(code, 2)
+        self.assertIn("non combinabile con -o/--md", err)
+
+    def test_n_minore_di_uno_e_un_errore(self):
+        for n in ("0", "-1"):
+            code, err = self.rejected(".", "-n", n)
+            self.assertEqual(code, 2)
+            self.assertIn("serve -n >= 1", err)
+
+    def test_o_con_md_resta_valido(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "g.md")
+            argv = ["gitgraph.py", ".", "-o", path, "--md"]
+            with mock.patch.object(gitgraph.sys, "argv", argv), \
+                    mock.patch.object(gitgraph, "read_graph",
+                                      return_value=linear_fixture() + ({}, [], "")):
+                gitgraph.main()  # nessun SystemExit
+            with open(path, encoding="utf-8") as f:
+                self.assertTrue(f.read().startswith("```mermaid\n"))
+
+
+class TrunkTest(unittest.TestCase):
+    """P2-04: il trunk viene da HEAD, non da un "main" cablato."""
+
+    COMMITS = {"c2": (["c1"], "secondo"), "c1": ([], "radice")}
+    SHORT = {"c2": "a2", "c1": "a1"}
+
+    def test_head_reale_sostituisce_il_fallback(self):
+        out = gitgraph.render(self.COMMITS, self.SHORT, {}, [], head="develop")
+        self.assertEqual(out[0], init("develop"))
+
+    def test_head_non_risolto_ricade_sul_fallback_dichiarato(self):
+        for head in ("", "HEAD"):
+            out = gitgraph.render(self.COMMITS, self.SHORT, {}, [], head=head)
+            self.assertEqual(out[0], init(gitgraph.MAIN_NAMES[0]))
+
+    def test_linear_usa_lo_stesso_fallback(self):
+        out = gitgraph.render(self.COMMITS, self.SHORT, {}, [], linear=True, head="")
+        self.assertEqual(out[0], init(gitgraph.MAIN_NAMES[0]))
+
+
 class GitErrorTest(unittest.TestCase):
     def test_git_solleva_errore_tipizzato(self):
         with tempfile.TemporaryDirectory() as d:
@@ -278,9 +343,9 @@ class ReadGraphParsingTest(unittest.TestCase):
     S = "\x1f"  # gitgraph.SEP: il formato del log e' un contratto, non un dettaglio interno
 
     def read(self, log, refs="tag v1 A1 A1\n"):
-        # ordine delle chiamate a git in read_graph(): worktree, log, tag, heads, remotes
+        # ordine delle chiamate a git in read_graph(): worktree, log, tag, HEAD, heads, remotes
         with mock.patch.object(gitgraph, "git",
-                               side_effect=["true\n", log, refs,
+                               side_effect=["true\n", log, refs, "main\n",
                                             "refs/heads/main a1 \n", ""]):
             return gitgraph.read_graph(".", 10)
 
@@ -358,12 +423,10 @@ class OutputPathTest(unittest.TestCase):
         read.assert_not_called()
         self.assertIn("directory inesistente", cm.exception.code)
 
-    def test_png_valido_ignora_o_invalido(self):
-        # --png vince su -o: validare un path che main() ignora bloccherebbe il lavoro buono
+    def test_png_valido_arriva_al_render(self):
         with tempfile.TemporaryDirectory() as d:
             png = os.path.join(d, "g.png")
-            argv = ["gitgraph.py", ".", "--png", png,
-                    "-o", os.path.join(d, "manca", "g.mmd")]
+            argv = ["gitgraph.py", ".", "--png", png]
             with mock.patch.object(gitgraph.sys, "argv", argv), \
                     mock.patch.object(gitgraph, "read_graph",
                                       return_value=linear_fixture() + ({}, [], "")), \

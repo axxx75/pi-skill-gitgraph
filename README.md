@@ -21,10 +21,10 @@ Output possibili (comandi eseguiti dalla radice del pacchetto, `<repo>` = reposi
 | file `.md` con fence `mermaid` | `python3 skills/gitgraph/scripts/gitgraph.py <repo> -o grafo.md --md` | preview di VS Code (`Ctrl+Shift+V`) |
 | immagine | `python3 skills/gitgraph/scripts/gitgraph.py <repo> --png grafo.png` | report, Telegram, documenti |
 
-Precedenza delle destinazioni (una sola per invocazione): `--png` **vince** su `-o` e `--md`; `-o`
-vince su stdout. Con `--png` un eventuale `-o FILE` viene ignorato senza avviso (non viene nemmeno
-validato): per avere sia il PNG sia il `.md` esegui lo script due volte, una con `--png` e una con
-`-o grafo.md --md`.
+Destinazioni esclusive: `--png` **non si combina** con `-o` né con `--md` (errore, exit 2: scegli
+una destinazione); `-o` con `--md` resta valido (fence nel file), `-o` da sola scrive Mermaid puro,
+`--md` da sola manda il fence su stdout. Per avere sia il PNG sia il `.md` esegui lo script due
+volte, una con `--png` e una con `-o grafo.md --md`.
 
 ## Requirements
 
@@ -130,7 +130,7 @@ python3 skills/gitgraph/scripts/gitgraph.py ~/un/repo -n 15 --png /tmp/grafo.png
 | `-n N` | commit massimi, default 30 |
 | `-o FILE` | scrive su file invece che su stdout |
 | `--md` | avvolge l'output nel fence ```` ```mermaid ```` |
-| `--png FILE` | renderizza il PNG con `mmdc` (largo 1600 px, sfondo bianco); niente stdout, e ha la precedenza su `-o`/`--md` (vedi §Output possibili) |
+| `--png FILE` | renderizza il PNG con `mmdc` (largo 1600 px, sfondo bianco); niente stdout; incompatibile con `-o`/`--md` (exit 2), vedi §Output possibili |
 | `--linear` | fila indiana, un solo ramo: ripiego se la ricostruzione esce sbagliata |
 | `--label-len N` | caratteri massimi del testo dell'etichetta, troncato a confine di parola con `…` (default 32; `0` = soggetto intero); con più tag `+N` è accodato a parte |
 

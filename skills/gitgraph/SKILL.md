@@ -21,11 +21,11 @@ python3 {baseDir}/scripts/gitgraph.py [REPO] [-n 30] [-o FILE] [--md] [--png FIL
 | `-n N` | commit massimi, default 30 (oltre il grafo diventa illeggibile) |
 | `-o FILE` | scrive su file invece che su stdout |
 | `--md` | avvolge l'output nel fence ```` ```mermaid ````: `-o grafo.md` è pronto per la preview |
-| `--png FILE` | renderizza il PNG con `mmdc` (largo 1600px, sfondo bianco); niente stdout |
+| `--png FILE` | renderizza il PNG con `mmdc` (largo 1600px, sfondo bianco); niente stdout; incompatibile con `-o`/`--md` (exit 2) |
 | `--linear` | fila indiana, un solo ramo: ripiego se la ricostruzione esce sbagliata |
 | `--label-len N` | caratteri massimi del testo dell'etichetta, troncato a confine di parola con `…` (default 32; `0` = soggetto intero, 10-12 per grafi stretti); con più tag `+N` è accodato a parte |
 
-stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` lo stdout resta vuoto. Una sola destinazione per invocazione: `--png` **vince** su `-o` e `--md`, `-o` vince su stdout — con `--png` un `-o FILE` viene ignorato senza avviso, quindi per avere PNG e `.md` invoca lo script due volte. Warning e diagnostica vanno su stderr. `--png` richiede `mmdc` e un Chromium: installazione e diagnosi in `references/png-setup.md`.
+stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` lo stdout resta vuoto. Le destinazioni sono esclusive: `--png` **non si combina** con `-o` né con `--md` (errore, exit 2: scegli una destinazione), mentre `-o` con `--md` resta valido — per avere PNG e `.md` invoca lo script due volte. Warning e diagnostica vanno su stderr. `--png` richiede `mmdc` e un Chromium: installazione e diagnosi in `references/png-setup.md`.
 
 ## Passi
 
