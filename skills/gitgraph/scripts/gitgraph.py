@@ -103,6 +103,33 @@ def render_png(mermaid, out, size=1600):
             sys.exit(f"mmdc fallito: {r.stderr.strip() or r.stdout.strip()}")
 
 
+def check_out(path):
+    """Path di uscita utilizzabile: errore in stile CLI (una riga, exit 1), mai un traceback."""
+    parent = os.path.dirname(os.path.abspath(path))
+    if os.path.isdir(path):
+        sys.exit(f"{path}: e' una directory, serve un file")
+    if not os.path.isdir(parent):
+        sys.exit(f"{path}: directory inesistente ({parent})")
+
+
+def write_atomic(path, text):
+    """`<path>.tmp` + os.replace (stesso filesystem): una scrittura fallita non tronca il file."""
+    tmp = path + ".tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except OSError as e:
+        sys.exit(f"{path}: scrittura fallita: {e.strerror or e}")
+    finally:
+        # nessun .tmp orfano, anche su KeyboardInterrupt/SystemExit (dopo il replace e' un no-op)
+        if os.path.exists(tmp):
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
 def read_graph(repo, n, linear=False):
     """Legge da git i dati che render() consuma: unica porta verso git del modulo."""
     if git(repo, "rev-parse", "--is-inside-work-tree").strip() != "true":
@@ -313,6 +340,10 @@ def main():
                     help="caratteri massimi per etichetta, troncata a confine di parola "
                          "(default 32, 0 = soggetto intero)")
     a = ap.parse_args()
+    if a.png:
+        check_out(a.png)  # --png vince su -o, che main() ignora: non deve bloccare
+    elif a.o:
+        check_out(a.o)
 
     try:
         commits, short, tags, tips, head = read_graph(a.repo, a.n, a.linear)
@@ -330,8 +361,7 @@ def main():
     if a.md:
         text = f"```mermaid\n{text}```\n"
     if a.o:
-        with open(a.o, "w", encoding="utf-8") as f:
-            f.write(text)
+        write_atomic(a.o, text)
         print(f"{len(out)} righe -> {a.o}", file=sys.stderr)
     else:
         sys.stdout.write(text)
