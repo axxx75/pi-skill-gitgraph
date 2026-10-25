@@ -29,12 +29,14 @@ def git(repo, *args, strict=True):
 
 
 def slug(branch):
-    # mermaid vuole nomi ramo senza spazi: slash e simili diventano underscore
+    """Nome ramo per Mermaid: solo [A-Za-z0-9_-], fallback "branch" se resta vuoto."""
     return re.sub(r"[^A-Za-z0-9_-]", "_", branch) or "branch"
 
 
 def label(text, limit=MAX_SUBJECT):
-    """Soggetto su una riga, troncato a confine di parola con ellissi (limit <= 0: intero)."""
+    """Soggetto su una riga (spazi collassati, " -> '), troncato a `limit` DOPO la
+    normalizzazione, a confine di parola con ellissi (limit <= 0: intero).
+    """
     text = " ".join(str(text).replace('"', "'").split())
     if limit <= 0 or len(text) <= limit:
         return text
@@ -83,6 +85,11 @@ def chrome_bin():
 
 
 def render_png(mermaid, out, size=1600):
+    """Mermaid -> PNG via mmdc; esce con una riga se mmdc o Chromium mancano.
+
+    --no-sandbox nel puppeteer.json: il Chromium locale gira in container/CI dove il
+    sandbox non ha namespace utente; l'input e' l'.mmd scritto qui, non HTML esterno.
+    """
     mmdc = shutil.which("mmdc")
     if not mmdc:
         sys.exit("mmdc non trovato (npm i -g @mermaid-js/mermaid-cli): vedi README.md, sezione «--png»")
@@ -164,168 +171,191 @@ def read_graph(repo, n, linear=False):
 
 def render(commits, short, tags, tips, linear=False, label_len=MAX_SUBJECT,
            head="", warn=None) -> list[str]:
-    """commits/short/tags/tips gia' letti da git -> righe Mermaid (nessun I/O)."""
-    say = warn or (lambda _msg: None)
-    out = []
+    """commits/short/tags/tips gia' letti da git -> righe Mermaid (nessun I/O).
 
-    def emit(line):
-        out.append("    " + line)
-
-    def tag_of(h, fallback):
-        """Primo tag, mai spezzato: i tag in piu' diventano "+N"; subject troncato se non c'e' tag."""
-        if h not in tags:
-            return label(fallback, label_len)
-        first = label(tags[h][0], label_len)
-        return f"{first} +{len(tags[h]) - 1}" if len(tags[h]) > 1 else first
-
-    def commit_line(h):
-        emit(f'commit id: "{short[h]}" tag: "{tag_of(h, commits[h][1])}"')
-
-    def header(branch_name):
-        out.append('%%{init: {"gitGraph": {"mainBranchName": "'
-                   + branch_name + '"}}}%%')
-        out.append("gitGraph")
-
+    Linear: una fila parents-first. Altrimenti Graph ricostruisce le lane nello stesso
+    ordine di sempre (header, walk, settle, report_lost); lo stato vive sull'istanza.
+    """
+    g = Graph(commits, short, tags, label_len, warn)
     if linear:
         # ordine parents-first, senza rami: il nome serve solo all'etichetta del ramo
-        header(slug("main" if head in ("", "HEAD") else head))
+        g.header(slug("main" if head in ("", "HEAD") else head))
         for h in reversed(list(commits)):
-            commit_line(h)
-    else:
-        owner = {}  # commit -> ramo che lo rivendica
-        names, taken = {}, set()  # unica mappa raw -> nome Mermaid (nessuna collisione)
+            g.commit_line(h)
+        return g.out
 
-        def uname(branch):
-            """raw -> nome Mermaid unico: nomi diversi non possono collassare in una lane."""
-            if branch not in names:
-                base = slug(branch)
-                cand, i = base, 1
-                while cand in taken:
-                    i += 1
-                    cand = f"{base}_{i}"
-                if cand != base:
-                    say(f'warning: ramo "{branch}": "{base}" occupato, uso "{cand}"\n')
-                names[branch] = cand
-                taken.add(cand)
-            return names[branch]
+    g.claim(tips)
+    g.header(g.uname(g.start_branch))
+    g.walk(g.start, g.start_branch)
+    g.settle()        # ex while True + ready()
+    g.report_lost()   # ex reti di sicurezza
+    return g.out
 
-        for ref, sha in tips:
-            uname(ref)  # la frontiera rivendica i nomi per prima (main/master in testa)
-            # catena first-parent in-finestra: con --topo-order un genitore fuori da
-            # commits ha tutti gli antenati fuori, quindi si chiude come faceva rev-list
-            while sha in commits:
-                owner.setdefault(sha, ref)
-                par = commits[sha][0]
-                sha = par[0] if par else None
 
-        children = {}
+class Graph:
+    """Ricostruzione delle lane: ogni struttura mutata e' un campo, non una cattura di closure."""
+
+    def __init__(self, commits, short, tags, label_len=MAX_SUBJECT, warn=None):
+        self.commits, self.short, self.tags = commits, short, tags
+        self.label_len = label_len
+        self.say = warn or (lambda _msg: None)
+        self.out = []
+        self.owner = {}  # commit -> ramo che lo rivendica
+        self.names, self.taken = {}, set()  # unica mappa raw -> nome Mermaid (nessuna collisione)
+        self.children = {}
         for h, (parents, _) in commits.items():
             for p in parents:
                 if p in commits:
-                    children.setdefault(p, []).append(h)
+                    self.children.setdefault(p, []).append(h)
+        self.heads, self.finished, self.deferred = {}, set(), []
+        self.state = {"cur": None, "made": set()}
+        self.start = self.start_branch = ""
 
-        def parents_of(h):
-            return [p for p in commits[h][0] if p in commits]
+    def emit(self, line):
+        self.out.append("    " + line)
+
+    def tag_of(self, h, fallback):
+        """Primo tag, mai spezzato: i tag in piu' diventano "+N"; subject troncato se non c'e' tag."""
+        if h not in self.tags:
+            return label(fallback, self.label_len)
+        first = label(self.tags[h][0], self.label_len)
+        return f"{first} +{len(self.tags[h]) - 1}" if len(self.tags[h]) > 1 else first
+
+    def commit_line(self, h):
+        self.emit(f'commit id: "{self.short[h]}" tag: "{self.tag_of(h, self.commits[h][1])}"')
+
+    def header(self, branch_name):
+        self.out.append('%%{init: {"gitGraph": {"mainBranchName": "'
+                        + branch_name + '"}}}%%')
+        self.out.append("gitGraph")
+
+    def uname(self, branch):
+        """raw -> nome Mermaid unico: nomi diversi non possono collassare in una lane."""
+        if branch not in self.names:
+            base = slug(branch)
+            cand, i = base, 1
+            while cand in self.taken:
+                i += 1
+                cand = f"{base}_{i}"
+            if cand != base:
+                self.say(f'warning: ramo "{branch}": "{base}" occupato, uso "{cand}"\n')
+            self.names[branch] = cand
+            self.taken.add(cand)
+        return self.names[branch]
+
+    def parents_of(self, h):
+        return [p for p in self.commits[h][0] if p in self.commits]
+
+    def claim(self, tips):
+        """Assegna owner e lane di partenza; i nomi li rivendica la frontiera per prima."""
+        for ref, sha in tips:
+            self.uname(ref)  # la frontiera rivendica i nomi per prima (main/master in testa)
+            # catena first-parent in-finestra: con --topo-order un genitore fuori da
+            # commits ha tutti gli antenati fuori, quindi si chiude come faceva rev-list
+            while sha in self.commits:
+                self.owner.setdefault(sha, ref)
+                par = self.commits[sha][0]
+                sha = par[0] if par else None
 
         # catene laterali senza ref (tipiche dei merge PR): lane dedicata al merge
-        for m in commits:
-            par = parents_of(m)
+        for m in self.commits:
+            par = self.parents_of(m)
             if len(par) < 2:
                 continue
             p = par[1]
-            while p in commits and p not in owner:
-                owner[p] = f"merge_{short[m]}"
-                p = commits[p][0][0] if commits[p][0] else None
+            while p in self.commits and p not in self.owner:
+                self.owner[p] = f"merge_{self.short[m]}"
+                p = self.commits[p][0][0] if self.commits[p][0] else None
 
-        roots = [h for h in commits if not parents_of(h)]
-        start = roots[-1] if roots else next(reversed(commits))
-        start_branch = owner.get(start, "main")
-        header(uname(start_branch))
-
-        heads, finished, deferred = {}, set(), []
+        roots = [h for h in self.commits if not self.parents_of(h)]
+        self.start = roots[-1] if roots else next(reversed(self.commits))
+        self.start_branch = self.owner.get(self.start, "main")
         # stato in un solo dominio (nomi Mermaid): lane corrente + lane gia' emesse
-        first = uname(start_branch)
-        state = {"cur": first, "made": {first}}
+        first = self.uname(self.start_branch)
+        self.state = {"cur": first, "made": {first}}
 
-        def switch(branch):
-            n = uname(branch)
-            if state["cur"] == n:
+    def switch(self, branch):
+        n = self.uname(branch)
+        if self.state["cur"] == n:
+            return
+        if n in self.state["made"]:
+            self.emit(f"checkout {n}")
+        else:
+            self.emit(f"branch {n}")
+            self.state["made"].add(n)
+        self.state["cur"] = n
+
+    def emit_commit(self, h, branch):
+        par = self.parents_of(h)
+        if len(par) > 1:
+            side = self.owner.get(par[1]) or next(
+                (b for b, tip in self.heads.items() if tip == par[1]), None)
+            if side and side != branch and self.heads.get(side) == par[1]:
+                self.emit(f'merge {self.uname(side)} id: "{self.short[h]}" '
+                          f'tag: "{self.tag_of(h, self.commits[h][1])}"')
                 return
-            if n in state["made"]:
-                emit(f"checkout {n}")
-            else:
-                emit(f"branch {n}")
-                state["made"].add(n)
-            state["cur"] = n
+        self.commit_line(h)
 
-        def emit_commit(h, branch):
-            par = parents_of(h)
-            if len(par) > 1:
-                side = owner.get(par[1]) or next(
-                    (b for b, tip in heads.items() if tip == par[1]), None)
-                if side and side != branch and heads.get(side) == par[1]:
-                    emit(f'merge {uname(side)} id: "{short[h]}" tag: "{tag_of(h, commits[h][1])}"')
-                    return
-            commit_line(h)
+    def walk(self, h, branch):
+        if h in self.finished:
+            return
+        self.finished.add(h)
+        self.emit_commit(h, branch)
+        self.heads[branch] = h
+        # figli di cui h e' il primo genitore presente: il ramo nasce qui
+        kids = [c for c in self.children.get(h, []) if self.parents_of(c)[0] == h]
+        # prima i rami che si staccano, poi la continuazione, i merge in coda
+        for c in sorted(kids, key=lambda c: (len(self.parents_of(c)) > 1,
+                                             self.owner.get(c, branch) == branch)):
+            cb = self.owner.get(c, branch)
+            par = self.parents_of(c)
+            if len(par) > 1 and self.heads.get(self.owner.get(par[1])) != par[1]:
+                self.switch(cb)   # lane creata al fork point, poi si torna indietro
+                self.switch(branch)
+                self.deferred.append(c)
+                continue
+            self.switch(cb)
+            self.walk(c, cb)
+            self.switch(branch)
 
-        def walk(h, branch):
-            if h in finished:
-                return
-            finished.add(h)
-            emit_commit(h, branch)
-            heads[branch] = h
-            # figli di cui h e' il primo genitore presente: il ramo nasce qui
-            kids = [c for c in children.get(h, []) if parents_of(c)[0] == h]
-            # prima i rami che si staccano, poi la continuazione, i merge in coda
-            for c in sorted(kids, key=lambda c: (len(parents_of(c)) > 1,
-                                                 owner.get(c, branch) == branch)):
-                cb = owner.get(c, branch)
-                par = parents_of(c)
-                if len(par) > 1 and heads.get(owner.get(par[1])) != par[1]:
-                    switch(cb)   # lane creata al fork point, poi si torna indietro
-                    switch(branch)
-                    deferred.append(c)
-                    continue
-                switch(cb)
-                walk(c, cb)
-                switch(branch)
+    def ready(self, h):
+        return h not in self.finished and all(p in self.finished for p in self.parents_of(h))
 
-        walk(start, start_branch)
-
-        def ready(h):
-            return h not in finished and all(p in finished for p in parents_of(h))
-
-        # componenti staccate (finestra troncata) e merge sbloccati in un secondo giro
+    def settle(self):
+        """Componenti staccate (finestra troncata) e merge sbloccati, in un secondo giro."""
         while True:
-            todo = [h for h in reversed(list(commits)) if ready(h)]
+            todo = [h for h in reversed(list(self.commits)) if self.ready(h)]
             if not todo:
                 break
             for h in todo:
-                if not ready(h):
+                if not self.ready(h):
                     continue
-                if h in deferred:
-                    deferred.remove(h)
-                cb = owner.get(h, start_branch)
-                switch(cb)
-                walk(h, cb)
+                if h in self.deferred:
+                    self.deferred.remove(h)
+                cb = self.owner.get(h, self.start_branch)
+                self.switch(cb)
+                self.walk(h, cb)
 
-        # reti di sicurezza: nulla sparisce in silenzio
-        lost = [h for h in reversed(list(commits)) if h not in finished]
+    def report_lost(self):
+        """Reti di sicurezza: nulla sparisce in silenzio, i buchi diventano warning."""
+        lost = [h for h in reversed(list(self.commits)) if h not in self.finished]
         if lost:
-            say(f"warning: {len(lost)} commit fuori dalle catene principali\n")
-            switch(start_branch)
+            self.say(f"warning: {len(lost)} commit fuori dalle catene principali\n")
+            self.switch(self.start_branch)
             for h in lost:
-                commit_line(h)
-        if deferred:
-            say(f"warning: {len(deferred)} merge non ricostruiti\n")
+                self.commit_line(h)
+        if self.deferred:
+            self.say(f"warning: {len(self.deferred)} merge non ricostruiti\n")
         # un checkout finale non disegna nulla
-        while out and out[-1].strip().startswith("checkout "):
-            out.pop()
-
-    return out
+        while self.out and self.out[-1].strip().startswith("checkout "):
+            self.out.pop()
 
 
 def main():
+    """Entry point CLI: argomenti, I/O (stdout / -o / --png) e GitError -> sys.exit.
+
+    Qui nessuna logica di disegno: read_graph() legge da git, render() produce le righe.
+    """
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("repo", nargs="?", default=".", help="path del repository")
     ap.add_argument("-n", type=int, default=30, help="numero massimo di commit (default 30)")
