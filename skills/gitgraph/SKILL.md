@@ -18,7 +18,7 @@ python3 {baseDir}/scripts/gitgraph.py [REPO] [-n 30] [-o FILE] [--md] [--png FIL
 | Opzione | Significato |
 |---|---|
 | `REPO` | path del repository, default `.` |
-| `-n N` | commit massimi, default 30 (oltre il grafo diventa illeggibile) |
+| `-n N` | finestra di ricostruzione, default 30: i commit letti da `git log --all`, su cui la ricostruzione lavora (oltre il grafo diventa illeggibile; alzarla fa rientrare i genitori dei merge, quindi più rami = più lento) |
 | `-o FILE` | scrive su file invece che su stdout |
 | `--md` | avvolge l'output nel fence ```` ```mermaid ````: `-o grafo.md` è pronto per la preview |
 | `--png FILE` | renderizza il PNG con `mmdc` (largo 1600px, sfondo bianco); niente stdout; incompatibile con `-o`/`--md` (exit 2) |
@@ -50,6 +50,8 @@ stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` lo stdout re
 - **Scritture**: nessun file di stato, nessuna cache, niente dentro il repo target. Lo script scrive solo dove glielo chiedi (`-o FILE`, `--png FILE`, qualunque path), più `in.mmd` e `puppeteer.json` dentro una `TemporaryDirectory` di sistema cancellata all'uscita. I file che crei restano: se serve pulizia, rimuovili tu.
 - Fila indiana con `--linear` o quando la finestra taglia i genitori di un merge.
 - Repo divergenti (locale `main` indietro rispetto a `origin/main`) producono due lane: è la storia reale, non un errore.
+- **Limiti dell'ambiente**: un bare repo è rifiutato con `non e' un repository git` (senza worktree non c'è storia da disegnare: clona e passa il clone); `-o` e `--png` non creano le directory di output (`directory inesistente`): creale tu, l'agente non inventa path.
+- **Comportamenti definiti (non limiti)**: un tag in formato inatteso esce con `tag non interpretabile` (niente traceback) e i caratteri Mermaid speciali (`"`, `\`, `#`, backtick, controlli) sono neutralizzati: un subject ostile resta renderizzabile.
 
 ## Privacy
 

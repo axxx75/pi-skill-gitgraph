@@ -17,9 +17,16 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   file l'errore grezzo di git usciva prima); doc allineata al troncamento reale (l'ellissi `…`
   sta dentro `--label-len`, non oltre); `selftest.sh` verifica il testo del messaggio, non solo
   l'exit code.
+- P2-14: `-n` documentato come **finestra di ricostruzione** (perché alzarlo ricostruisce i merge e
+  perché più rami = più lento); nuova sezione «Limiti noti» con bare repo rifiutati e directory di
+  output non create; i casi già risolti (tag con spazio, escaping) sono scritti nella forma
+  definitiva, non come limiti.
 
 ### Note
 
+- **Doc, non codice (P2-14).** Nessuna modifica di comportamento: la precedenza dei flag del
+  README/SKILL è già stata riscritta in P2-04 (rifiuto di `--png` con `-o`/`--md`), qui si
+  documentano `-n` e i limiti reali verificati con lo script.
 - **Messaggio raggiungibile (P2-05).** Un path inesistente, un file o un bare repo ora escono con
   `non e' un repository git` (exit 1, invariato), non più con `git rev-parse ...: fatal: ...`.
   Il contratto di `--label-len` è "N caratteri, ellissi compresa": il vecchio `32 + "..." = 35`

@@ -127,7 +127,7 @@ python3 skills/gitgraph/scripts/gitgraph.py ~/un/repo -n 15 --png /tmp/grafo.png
 | Opzione | Significato |
 |---|---|
 | `REPO` | path del repository (default `.`) |
-| `-n N` | commit massimi, default 30 |
+| `-n N` | finestra di ricostruzione in commit, default 30 (vedi §`-n`: finestra di ricostruzione) |
 | `-o FILE` | scrive su file invece che su stdout |
 | `--md` | avvolge l'output nel fence ```` ```mermaid ```` |
 | `--png FILE` | renderizza il PNG con `mmdc` (largo 1600 px, sfondo bianco); niente stdout; incompatibile con `-o`/`--md` (exit 2), vedi §Output possibili |
@@ -144,6 +144,39 @@ leggibile resta `--label-len` contenuto (10-12) e/o `-n` ridotto, accettando sub
 
 Un merge si ricostruisce solo con **entrambi i genitori** nella finestra di commit: se `stderr`
 segnala `commit fuori dalle catene principali` o `merge non ricostruiti`, rilancia con `-n` più alto.
+
+## `-n`: finestra di ricostruzione
+
+`-n` (default 30) non è un "numero massimo di commit": è la **finestra di ricostruzione**. È il
+numero di commit che `git log --all --topo-order` restituisce, e la ricostruzione delle lane lavora
+solo su quelli; la catena first-parent di ogni tip viene percorsa **dentro** la finestra. Per questo
+alzare `-n` "aggiusta" il grafo: fa rientrare i genitori di un merge, che senza entrambi non è
+ricostruibile (e il commit finisce in una lane laterale o in un warning). Il costo cresce con i
+rami: più tip = più catene da percorrere e due `git for-each-ref` su tutti i ref, quindi su un repo
+con molti rami/ref remoti conviene partire bassi e alzare solo se `stderr` segnala merge non
+ricostruiti. `-n < 1` è rifiutato (exit 2): non esiste una finestra vuota.
+
+## Limiti noti
+
+Comportamenti verificabili che non si aggirano dai flag:
+
+- **Bare repo rifiutati**: in un bare repo `--is-inside-work-tree` è `false`, quindi lo script esce
+  con `non e' un repository git` (exit 1). Non è un guasto: senza worktree non c'è una storia da
+  disegnare. Workaround: clonare il repo (`git clone <path>`) e passare il clone.
+- **Directory di output non create**: `-o` e `--png` richiedono che la directory esista già
+  (`directory inesistente`, exit 1): lo script non crea cartelle. Workaround: `mkdir -p` prima.
+- **Una destinazione per invocazione**: `--png` è incompatibile con `-o`/`--md` (exit 2); per avere
+  sia il PNG sia il `.md` esegui lo script due volte.
+
+Casi **risolti** — comportamento definitivo, non più limiti:
+
+- **Tag con spazio** (`release 1.0`): git non li crea (`check-ref-format`); se un ref arriva
+  comunque in un formato inatteso lo script esce con `tag non interpretabile: <riga>` (exit 1), non
+  con un traceback. Un subject con `|` non confonde più il parsing del log (separatore di campo
+  esplicito).
+- **Escaping Mermaid**: `"`, `\`, `#` e backtick sono neutralizzati (`'`, `#92;`, `#35;`, `#96;`) e
+  i caratteri di controllo diventano `#65533;`, in un unico punto (`escape()`): il grafo resta
+  renderizzabile anche con subject ostili.
 
 ## Troubleshooting
 
