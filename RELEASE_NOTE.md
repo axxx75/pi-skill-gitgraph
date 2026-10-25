@@ -68,6 +68,20 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   dal refactor P0-04). Nella forma del fork-clone (202 ref: `main` locale, `origin/main` = `main`,
   200 upstream) la stessa finestra dà 1 lane e 0 lane upstream. Nessun `rev-list
   --stdin`: non serve. Limite e numeri dichiarati in `SKILL.md` (Limiti) e README.
+- P2-10: **flusso di release verificabile**. `skills/gitgraph/tests/check-release.sh` verifica
+  offline (solo tag locali, nessun `git ls-remote`) che `package.json.version` abbia il tag
+  `vX.Y.Z` antenato di `HEAD` e che `RELEASE_NOTE.md` abbia la voce `## X.Y.Z`; senza tag locali
+  esce `SKIP` (mai un verde finto), su incoerenza exit 1. Il check gira nel job CI `selftest`
+  (checkout con `fetch-depth: 0`, altrimenti lì sarebbe uno `SKIP`) e la procedura — test →
+  `RELEASE_NOTE` + bump → commit → tag → push → `pi install` — è in README §Release. Nessun cambio
+  di comportamento del grafo.
+- P2-15: `docs/adr/` con **5 ADR** sulle decisioni già prese e verificabili dalla storia: escaping
+  Mermaid in un unico punto (`#TASK-P2-01`), separatore `\x1f` nel parsing del log (`#TASK-P2-07`),
+  sandbox Chromium attiva con gate `GITGRAPH_NO_SANDBOX=1` (`#TASK-P2-02`), finestra = rami locali +
+  `origin` + tag (`#TASK-P2-03`), warning su stderr come contratto macchina (`#TASK-P2-06`); formato
+  minimo stato/data/contesto/decisione/conseguenze, nessun template vuoto. `RELEASE_NOTE.md` resta
+  il registro unico delle versioni e recupera la voce **1.0.1** con la sola cosa che la storia
+  documenta (l'asset grafico); README chiude con il rimando a `docs/adr/` e a `RELEASE_NOTE.md`.
 
 ### Note
 
@@ -109,9 +123,19 @@ Le versioni precedenti sono ricostruibili dalla storia git.
 
 ## 1.0.2 — 2026-10-25
 
-- Fix `--linear`: nessun header Mermaid quando il grafo è lineare.
-- Fix `HEAD` unborn/dangling: `git()` non termina più con exit 1 (`strict=False` + fallback), caso coperto nel selftest.
+- Fix `--linear`: nessun header Mermaid quando il grafo è lineare (`e2e9bcb`).
+- Fix `HEAD` unborn/dangling: `git()` non termina più con exit 1 (`strict=False` + fallback), caso
+  coperto nel selftest (`9898bbe`).
+- README §Install: senza ref `pi update` segue `main` (sempre ultima versione online); un ref
+  pinnato (tag o commit) **non si sposta più** — non usare `@v1.0.1` (`5fcae92`).
 
-## 1.0.0
+## 1.0.1 — 2026-10-24
 
-- Release iniziale.
+- Solo l'esempio grafico: `skills/gitgraph/assets/example.png` aggiunto al README (PNG generato da
+  `--png` su un repo con tre rami e due merge, tag `v1.0.0`/`v1.1.0`), con il bump di `package.json`
+  a 1.0.1 (`be0bedc`). `git log v1.0.0..v1.0.1` non contiene altro.
+
+## 1.0.0 — 2026-10-24
+
+- Release iniziale: pacchetto pi (skill + manifest + README + MIT), tag annotato `v1.0.0`
+  (`3112891`).
