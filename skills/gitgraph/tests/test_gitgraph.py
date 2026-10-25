@@ -184,6 +184,17 @@ class SettleTest(unittest.TestCase):
         self.assertEqual(warnings, [])
 
 
+class SwitchStateTest(unittest.TestCase):
+    """P2-08: un checkout in coda (ritorno alla lane di partenza) non resta nell'output."""
+
+    def test_checkout_finale_rimosso(self):
+        commits = {"X": (["A"], "x"), "A": ([], "a")}
+        out = gitgraph.render(commits, {"X": "a2", "A": "a1"}, {},
+                              [("main", "A"), ("side", "X")])
+        self.assertEqual(out[-1], '    commit id: "a2" tag: "x"')
+        self.assertFalse([line for line in out if line.strip().startswith("checkout ")])
+
+
 class RenderLabelTest(unittest.TestCase):
     SUBJECT = "feat: configurazione molto lunga delle etichette nei diagrammi"
 

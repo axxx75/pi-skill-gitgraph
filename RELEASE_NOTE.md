@@ -48,6 +48,11 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   esplicite `--width N`, `--theme NOME`, `--font N` al posto di larghezza 1600, tema e font cablati.
   Con `--png` lo stdout è la riga `![Storia git: N commit su M rami](file.png)` da incollare nel
   documento (prima era vuoto): il passo di consegna di `SKILL.md` la richiede.
+- P2-08: lo stato della lane è esplicito (`self.current` + `self.made`) invece di un dict-cella
+  ereditato dal refactor da closure; `switch()` è l'unico posto che decide `branch` vs `checkout`.
+  L'output resta byte-identico (verificato con `diff` su tre repo e tre finestre); la pulizia del
+  `checkout` in coda resta un caso mirato, con il commento che dice dove andrebbe gestita una
+  nuova direttiva Mermaid.
 - P2-03: dei ref remoti si tengono solo quelli di `origin` (se esistono; senza `origin` si usano i
   remoti presenti): i fork/upstream non aprono più lane. Misura su 216 ref (6 locali, 10 origin,
   200 upstream): 215 → 15 lane e 647 → 248 righe a `-n 300`, tempo invariato (~0,06 s contro ~0,05 s

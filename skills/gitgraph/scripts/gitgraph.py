@@ -321,7 +321,10 @@ class Graph:
                 if p in commits:
                     self.children.setdefault(p, []).append(h)
         self.heads, self.finished, self.deferred = {}, set(), set()
-        self.state = {"cur": None, "made": set()}
+        # stato della lane corrente dichiarato una volta: current = nome Mermaid attivo,
+        # made = lane gia' emesse. Nessuna cella mutabile: li aggiorna solo switch().
+        self.current = None
+        self.made = set()
         self.start = self.start_branch = ""
 
     def emit(self, line):
@@ -384,18 +387,19 @@ class Graph:
         self.start_branch = self.owner.get(self.start, self.trunk)
         # stato in un solo dominio (nomi Mermaid): lane corrente + lane gia' emesse
         first = self.uname(self.start_branch)
-        self.state = {"cur": first, "made": {first}}
+        self.current, self.made = first, {first}
 
     def switch(self, branch):
+        """Unico posto che decide `branch` vs `checkout`: nessuna lane emessa due volte."""
         n = self.uname(branch)
-        if self.state["cur"] == n:
+        if n == self.current:
             return
-        if n in self.state["made"]:
+        if n in self.made:
             self.emit(f"checkout {n}")
         else:
             self.emit(f"branch {n}")
-            self.state["made"].add(n)
-        self.state["cur"] = n
+            self.made.add(n)
+        self.current = n
 
     def emit_commit(self, h, branch):
         par = self.parents_of(h)
@@ -475,7 +479,10 @@ class Graph:
                     self.commit_line(h)
         if self.deferred:
             self.say(WARN_DEFERRED.format(n=len(self.deferred), window=self.window * 2))
-        # un checkout finale non disegna nulla
+        # un `checkout` in coda non disegna nulla: switch() lo emette subito, ma l'ultimo
+        # puo' essere solo il ritorno alla lane di partenza senza commit a seguire. Resta
+        # una pulizia mirata a questo solo prefisso: se un domani un comando Mermaid in coda
+        # sporcasse il grafo, va gestito in switch(), non aggiungendo altri `startswith` qui.
         while self.out and self.out[-1].strip().startswith("checkout "):
             self.out.pop()
 
