@@ -53,13 +53,17 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   L'output resta byte-identico (verificato con `diff` su tre repo e tre finestre); la pulizia del
   `checkout` in coda resta un caso mirato, con il commento che dice dove andrebbe gestita una
   nuova direttiva Mermaid.
-- P2-03: dei ref remoti si tengono solo quelli di `origin` (se esistono; senza `origin` si usano i
-  remoti presenti): i fork/upstream non aprono più lane e i loro commit non entrano nella finestra
-  (che ora è `git log` sui soli ref tenuti, non `--all`), quindi non finiscono appesi alla lane
-  corrente. Misura su 216 ref (6 locali, 10 origin, 200 upstream): 215 → 15 lane a `-n 300`, tempo
-  invariato (~0,06 s contro ~0,05 s su un repo a 4 ref: il vecchio costo `N rev-list` non esiste più
-  dal refactor P0-04). Nessun `rev-list --stdin`: non serve. Limite e numeri dichiarati in
-  `SKILL.md` (Limiti) e README.
+- P2-03: dei ref remoti si tengono solo quelli di `origin` (se esistono; senza alcun ref di
+  `origin` si usano i remoti presenti): i fork/upstream non aprono più lane e i loro commit non
+  entrano nella finestra
+  (che ora è `git log` sui soli ref tenuti più i tag, non `--all`), quindi non finiscono appesi alla
+  lane corrente. Il filtro è per nome e precede il dedup per SHA: una lista `origin` svuotata dal
+  dedup (clone con `origin/main` = `main`) non fa più scattare il ripiego sui remoti. Misura su 216
+  ref (6 locali, 10 origin, 200 upstream, SHA distinti, lane contate dopo il dedup): 215 → 15 lane a
+  `-n 300`, ~0,06 s contro ~0,05 s su un repo a 4 ref (il vecchio costo `N rev-list` non esiste più
+  dal refactor P0-04). Nella forma del fork-clone (202 ref: `main` locale, `origin/main` = `main`,
+  200 upstream) la stessa finestra dà 1 commit e 0 lane upstream in ~0,05 s. Nessun `rev-list
+  --stdin`: non serve. Limite e numeri dichiarati in `SKILL.md` (Limiti) e README.
 
 ### Note
 

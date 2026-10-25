@@ -453,10 +453,76 @@ class BranchTipsTest(unittest.TestCase):
                                    remotes="refs/remotes/origin/main a1 \n"),
                          [("main", "a1")])
 
+    def test_origin_non_sparisce_se_duplica_il_locale(self):
+        # retry 2: origin/main == main (clone normale) non deve far scattare il ripiego
+        # sui remoti presenti, altrimenti i commit di upstream rientrano nella finestra
+        tips = self.tips(heads="refs/heads/main a1 \n",
+                         remotes="refs/remotes/origin/main a1 \n"
+                                 "refs/remotes/upstream/fork a9 \n")
+        self.assertEqual(tips, [("main", "a1")])
+
     def test_symref_ignorato(self):
-        self.assertEqual(self.tips(remotes="refs/remotes/origin/HEAD a1 "
-                                            "refs/remotes/origin/main\n"),
-                         [])
+        # due righe vere: il ref puntato da origin/HEAD resta una lane
+        self.assertEqual(self.tips(remotes="refs/remotes/origin/HEAD a1 refs/remotes/origin/main\n"
+                                            "refs/remotes/origin/main a1 \n"),
+                         [("origin/main", "a1")])
+
+
+class RefWindowIntTest(unittest.TestCase):
+    """P2-03 retry 2: finestra sui ref tenuti, su repository git veri."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def path(self, name):
+        return os.path.join(self.tmp.name, name)
+
+    def g(self, repo, *args):
+        return gitgraph.git(repo, "-c", "user.email=t@t.t", "-c", "user.name=t", *args)
+
+    def commit(self, repo, name):
+        with open(os.path.join(repo, name), "w", encoding="utf-8") as f:
+            f.write(name)
+        self.g(repo, "add", "-A")
+        self.g(repo, "commit", "-qm", name)
+        return self.g(repo, "rev-parse", "HEAD").strip()
+
+    def init(self, name):
+        repo = self.path(name)
+        os.makedirs(repo)
+        self.g(repo, "init", "-q", "-b", "main")
+        return repo
+
+    def test_clone_con_origin_uguale_a_main_non_riammette_upstream(self):
+        src = self.init("src")
+        first = self.commit(src, "uno")
+        work = self.path("work")
+        gitgraph.git(self.tmp.name, "clone", "-q", src, work)
+        self.assertEqual(self.g(work, "rev-parse", "HEAD").strip(), first)
+        upstream = self.init("upstream")
+        self.commit(upstream, "solo upstream")
+        self.g(work, "remote", "add", "upstream", upstream)
+        self.g(work, "fetch", "-q", "upstream")
+
+        commits, _, _, tips, _ = gitgraph.read_graph(work, 300)
+        self.assertEqual(list(commits), [first])
+        self.assertEqual(tips, [("main", first)])
+        warnings = []
+        gitgraph.render(commits, {first: "a1"}, {}, tips, warn=warnings.append)
+        self.assertEqual(warnings, [])
+
+    def test_commit_raggiungibile_solo_da_un_tag_resta_nella_finestra(self):
+        repo = self.init("tag")
+        self.commit(repo, "uno")
+        tree = self.g(repo, "rev-parse", "HEAD^{tree}").strip()
+        only_tag = self.g(repo, "commit-tree", tree, "-m", "solo tag").strip()
+        self.g(repo, "tag", "solo", only_tag)
+
+        commits, _, tags, tips, _ = gitgraph.read_graph(repo, 300)
+        self.assertIn(only_tag, commits)
+        out = gitgraph.render(commits, {h: h[:7] for h in commits}, tags, tips)
+        self.assertIn(f'commit id: "{only_tag[:7]}"', "\n".join(out))
 
 
 class ReadGraphParsingTest(unittest.TestCase):

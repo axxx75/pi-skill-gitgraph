@@ -120,7 +120,8 @@ un commit, un repo vuoto e un clone shallow) e verifica
 - escaping e parsing: `"`, `\`, `#`, backtick e caratteri di controllo nel subject o nel tag restano renderizzabili; un subject con `|` non rompe il log; un tag in formato inatteso esce con `tag non interpretabile`;
 - collisione di nomi sanificati (`feature/x` + `feature_x`): due lane distinte, warning su stderr;
 - ref remoti: un ramo di `origin` apre la sua lane, un ref di `upstream`/fork no e i suoi commit
-  restano fuori dal grafo (filtro P2-03);
+  restano fuori dal grafo anche quando `origin/main` ha lo stesso SHA di `main` (filtro P2-03);
+  un commit raggiungibile solo da un tag resta invece nel grafo;
 - `--png` produce un file non vuoto (se `mmdc` è installato, altrimenti `SKIP`); una `mmdc --version` diversa da `12.0.0` produce un `WARN` su stderr, non un fallimento;
 - `--png` stampa su stdout la sola riga `![Storia git: N commit su M rami](file.png)`; `--width 800` è rispettata (larghezza letta dall'IHDR del PNG);
 - `--theme` e `--font` compaiono nella direttiva `%%{init}%%` (`"theme": "dark"`, `"fontSize": "20px"`) e `--width 0` esce con 2 e `serve --width >= 1`;
@@ -197,7 +198,7 @@ segnala `commit fuori dalle catene principali` o `merge non ricostruiti`, rilanc
 
 `-n` (default 30) non è un "numero massimo di commit": è la **finestra di ricostruzione**. È il
 numero di commit che `git log --topo-order` restituisce sui soli rami tenuti (locali + `origin`,
-vedi §Limiti noti), e la ricostruzione delle lane lavora
+più i tag, vedi §Limiti noti), e la ricostruzione delle lane lavora
 solo su quelli; la catena first-parent di ogni tip viene percorsa **dentro** la finestra. Per questo
 alzare `-n` "aggiusta" il grafo: fa rientrare i genitori di un merge, che senza entrambi non è
 ricostruibile (e il commit finisce in una lane laterale o in un warning). Il costo cresce con i
@@ -217,8 +218,11 @@ Comportamenti verificabili che non si aggirano dai flag:
 - **Directory di output non create**: `-o` e `--png` richiedono che la directory esista già
   (`directory inesistente`, exit 1): lo script non crea cartelle. Workaround: `mkdir -p` prima.
 - **Rami remoti non-`origin`**: solo i ref di `origin` producono lane; i fork/upstream restano fuori
-  dal grafo (senza `origin` si usano i remoti presenti). Non c'è un flag per cambiarlo: se serve
-  quella vista, rinomina il remoto in `origin`.
+  dal grafo (senza alcun ref `origin` si usano i remoti presenti). Il filtro è per nome e precede il
+  dedup per SHA, quindi `origin/main` = `main` non fa scattare il ripiego sui remoti. Non c'è un
+  flag per cambiarlo: se serve quella vista, rinomina il remoto in `origin`.
+- **Commit solo da tag**: i tag sono ref legittimi e restano nella finestra (`git log --tags`): un
+  commit raggiungibile solo da un tag compare nel grafo, con il tag come etichetta.
 - **Una destinazione per invocazione**: `--png` è incompatibile con `-o`/`--md` (exit 2); per avere
   sia il PNG sia il `.md` esegui lo script due volte.
 

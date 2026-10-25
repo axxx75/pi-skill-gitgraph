@@ -130,6 +130,41 @@ if grep -q 'upstream' <<<"$rout"; then
   echo "FAIL: un ref o un commit di upstream e' nel grafo"; fail=1
 fi
 
+# P2-03 retry 2: clone con origin/main == main non deve riammettere i remoti (upstream)
+int="$tmp/wsrc"; init "$int"
+ig(){ git -C "$int" -c user.email=t@t.t -c user.name=t "$@"; }
+echo w > "$int/f.txt"; ig add -A; ig commit -qm "commit locale"
+git clone -q "$int" "$tmp/wclone"
+wc="$tmp/wclone"; wcg(){ git -C "$wc" -c user.email=t@t.t -c user.name=t "$@"; }
+[ "$(wcg rev-parse HEAD)" = "$(ig rev-parse HEAD)" ] \
+  || { echo "FAIL: clone, origin/main != main"; fail=1; }
+up="$tmp/wupstream"; init "$up"
+ug(){ git -C "$up" -c user.email=t@t.t -c user.name=t "$@"; }
+echo u > "$up/f.txt"; ug add -A; ug commit -qm "solo upstream"
+wcg remote add upstream "$up"; wcg fetch -q upstream
+wout=$(python3 "$here/scripts/gitgraph.py" "$wc" -n 300) \
+  || { echo "FAIL: clone con origin dedup, exit non-zero"; exit 1; }
+if grep -q 'upstream' <<<"$wout"; then
+  echo "FAIL: clone con origin dedup, un ref o un commit di upstream e' nel grafo"; fail=1
+fi
+[ "$(grep -c 'commit id:' <<<"$wout")" -eq 1 ] \
+  || { echo "FAIL: clone con origin dedup, atteso 1 commit"; fail=1; }
+if grep -q '^    branch ' <<<"$wout"; then
+  echo "FAIL: clone con origin dedup, lane inattese"; fail=1
+fi
+
+# P2-03: i commit raggiungibili solo da un tag restano nella finestra
+only="$tmp/onlytag"; init "$only"
+otg(){ git -C "$only" -c user.email=t@t.t -c user.name=t "$@"; }
+echo o > "$only/f.txt"; otg add -A; otg commit -qm "commit locale"
+otag=$(otg commit-tree "$(otg rev-parse HEAD^{tree})" -m "solo tag")
+otg tag solo "$otag"
+otag_short=$(otg rev-parse --short "$otag")
+otout=$(python3 "$here/scripts/gitgraph.py" "$only" -n 300) \
+  || { echo "FAIL: commit solo-tag, exit non-zero"; exit 1; }
+grep -q "commit id: \"$otag_short\"" <<<"$otout" \
+  || { echo "FAIL: commit raggiungibile solo da un tag fuori dal grafo"; fail=1; }
+
 # etichette: troncatura a confine di parola, --label-len, multi-tag mai spezzato
 cat > "$tmp/maxlabel.py" <<'PY'
 import sys

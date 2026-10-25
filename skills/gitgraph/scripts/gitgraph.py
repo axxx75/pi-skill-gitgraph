@@ -130,24 +130,40 @@ def branch_tips(repo):
 
     Dei remoti si tengono solo i ref di `origin` (se ne esistono): i rami degli altri
     remoti (fork/upstream, possono essere centinaia) aprirebbero lane che non
-    appartengono alla storia del repo. Senza `origin` si usano i remoti presenti.
-    Il limite e' dichiarato in SKILL.md; il costo del giro resta O(ref) in un solo
-    `for-each-ref` per namespace, non un processo per ramo.
+    appartengono alla storia del repo. Il filtro e' per nome e precede il dedup per
+    SHA, che non deve mai svuotare `origin`: in un clone normale `origin/main` ha lo
+    stesso commit di `main` e scartarlo come duplicato faceva scattare il ripiego
+    "tutti i remoti", riammettendo upstream. Il ripiego scatta solo se sotto
+    `refs/remotes/origin/` non esiste alcun ref. Il limite e' dichiarato in SKILL.md;
+    il costo del giro resta O(ref) in un solo `for-each-ref` per namespace, non un
+    processo per ramo.
     """
-    local, remote, seen = [], [], set()
-    for ns, bucket in (("refs/heads/", local), ("refs/remotes/", remote)):
+    local, origin, other, seen = [], [], [], set()
+    has_origin = False
+    for ns in ("refs/heads/", "refs/remotes/"):
         raw = git(repo, "for-each-ref", "--sort=-committerdate",
                   "--format=%(refname) %(objectname) %(symref)", ns)
         for line in raw.splitlines():
             ref, _, rest = line.partition(" ")
             sha, _, symref = rest.partition(" ")
-            if not sha or symref.strip() or sha in seen:
+            if not sha or symref.strip():
+                continue
+            name = ref[len(ns):]
+            remote = ns == "refs/remotes/"
+            if remote and not name.startswith("origin/"):
+                bucket = other
+            elif remote:
+                has_origin = True  # prima del dedup: decide solo se origin esiste
+                bucket = origin
+            else:
+                bucket = local
+            if sha in seen:
                 continue
             seen.add(sha)
-            bucket.append((ref[len(ns):], sha))
-    origin = [t for t in remote if t[0].startswith("origin/")]
+            bucket.append((name, sha))
     # il ramo principale rivendica per primo la sua catena first-parent
-    return sorted(local + (origin or remote), key=lambda t: t[0] not in MAIN_NAMES)
+    return sorted(local + (origin if has_origin else other),
+                  key=lambda t: t[0] not in MAIN_NAMES)
 
 
 def chrome_bin():
@@ -237,11 +253,12 @@ def read_graph(repo, n, linear=False):
         raise GitError(f"{repo}: non e' un repository git")
 
     # la finestra segue gli stessi ref delle lane (P2-03): --all includerebbe i commit
-    # raggiungibili solo da fork/upstream, che finirebbero appesi alla lane corrente
+    # raggiungibili solo da fork/upstream, che finirebbero appesi alla lane corrente.
+    # --tags tiene i commit raggiungibili solo da un tag (ref legittimi, non lane).
     tips = branch_tips(repo)
     revs = [sha for _, sha in tips] or ["--all"]
     # commit -> ([parents], subject), dal piu' recente al piu' vecchio
-    log = git(repo, "log", "--topo-order", f"-n{n}", *revs,
+    log = git(repo, "log", "--topo-order", f"-n{n}", *revs, "--tags",
               f"--pretty=format:%h{SEP}%H{SEP}%P{SEP}%s")
     short, commits = {}, {}
     # split("\n") e non splitlines(): git separa i commit con \n, mentre splitlines()
