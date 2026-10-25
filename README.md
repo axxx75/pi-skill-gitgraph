@@ -6,12 +6,15 @@ rendering PNG locale.
 
 ![Esempio: due rami (feature/payments, feature/auth), merge ricostruiti, tag v1.0.0 / release-1.0 +1 ed etichette troncate con …](skills/gitgraph/assets/example.png)
 
-*Esempio generato da questo pacchetto: `--png` su un repo con due rami e due merge, `--label-len 12`
-per un grafo stretto. I merge portano l'id del commit di merge, i tag git compaiono come `tag:` (se
+*Esempio generato con `mmdc 12.0.0` (§Install) e il Chromium risolto da `chrome_bin()` su un repo di
+prova con due rami e due merge, `--label-len 12` per un grafo stretto; la versione del browser non è
+registrata nell'asset. I merge portano l'id del commit di merge, i tag git compaiono come `tag:` (se
 il commit ne ha più di uno: il primo più `+N`), i subject sono troncati a `--label-len` caratteri
 (default 32, **ellissi `…` compresa**) a confine di parola, con taglio duro se il confine
-lascerebbe meno di metà del testo. Riproducibile con
-`python3 skills/gitgraph/scripts/gitgraph.py <repo> -n 20 --label-len 12 --png out.png`.*
+lascerebbe meno di metà del testo. Ricetta:
+`python3 skills/gitgraph/scripts/gitgraph.py <repo> -n 20 --label-len 12 --png out.png`. Con un altro
+renderer, altri font o un altro Chromium layout e byte cambiano: è un'**illustrazione, non un golden
+file** (nessun test confronta i byte).*
 
 Output possibili (comandi eseguiti dalla radice del pacchetto, `<repo>` = repository da analizzare):
 

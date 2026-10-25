@@ -33,6 +33,11 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   la frase contrattuale dei due warning resta identica e riceve in coda l'hint operativo
   (`-n 60` con il default 30). Il messaggio di `-o` diventa `N commit -> /path/assoluto`: conta i soli
   `commit id:` (non la direttiva `%%{init}%%` né i fence) e non usa più un path relativo.
+- P2-12: `package.json` ha `repository` e `engines` (`node >= 22.19.0`, requisito del runtime pi 1.4.0,
+  che copre anche mmdc 12.0.0); `docs/packages.md` di pi non prevede un campo per il requisito minimo
+  di `pi`, quindi `pi >= 1.4` resta in README/SKILL. Nuovo `.gitattributes`
+  (`skills/gitgraph/assets/example.png binary`) e README che dichiara l'esempio un'**illustrazione,
+  non un golden file**, con la ricetta esatta (mmdc 12.0.0 e Chromium non registrato).
 
 ### Note
 
