@@ -32,7 +32,9 @@ def label(text, limit=MAX_SUBJECT):
     text = " ".join(str(text).replace('"', "'").split())
     if limit <= 0 or len(text) <= limit:
         return text
-    cut = text[:limit - 1].rsplit(" ", 1)[0] or text[:limit - 1]
+    cut = text[:limit - 1].rsplit(" ", 1)[0]
+    if len(cut) * 2 < limit:  # confine di parola troppo vicino all'inizio: taglio duro
+        cut = text[:limit - 1]
     return cut + "…"
 
 

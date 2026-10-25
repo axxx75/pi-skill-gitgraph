@@ -23,7 +23,7 @@ python3 {baseDir}/scripts/gitgraph.py [REPO] [-n 30] [-o FILE] [--md] [--png FIL
 | `--md` | avvolge l'output nel fence ```` ```mermaid ````: `-o grafo.md` è pronto per la preview |
 | `--png FILE` | renderizza il PNG con `mmdc` (largo 1600px, sfondo bianco); niente stdout |
 | `--linear` | fila indiana, un solo ramo: ripiego se la ricostruzione esce sbagliata |
-| `--label-len N` | caratteri massimi per etichetta, troncata a confine di parola con `…` (default 32; `0` = soggetto intero, 10-12 per grafi stretti) |
+| `--label-len N` | caratteri massimi del testo dell'etichetta, troncato a confine di parola con `…` (default 32; `0` = soggetto intero, 10-12 per grafi stretti); con più tag `+N` è accodato a parte |
 
 stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` lo stdout resta vuoto. Warning e diagnostica vanno su stderr. `--png` richiede `mmdc` e un Chromium: installazione e diagnosi in `references/png-setup.md`.
 
@@ -38,11 +38,12 @@ stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` lo stdout re
 
 - Una lane per ramo locale o remoto distinto, aperta al fork point reale (first-parent), chiusa con `merge <ramo> id: "<hash>"`.
 - Catene laterali senza ref (tipiche dei merge PR): lane sintetica `merge_<hash>`.
-- `tag:` = tag git reale se il commit ne ha uno (con più tag: il primo più `+N`, mai un tag spezzato), altrimenti subject troncato a `--label-len` caratteri (default 32) a confine di parola con `…`.
+- `tag:` = tag git reale se il commit ne ha uno (con più tag: il primo più `+N`; un tag più lungo di `--label-len` viene comunque troncato), altrimenti subject troncato a `--label-len` caratteri (default 32) a confine di parola con `…`, con taglio duro se il confine lascerebbe meno di metà del testo.
 - Nomi ramo sanificati per Mermaid: `feature/x` → `feature_x`.
 
 ## Limiti
 
+- **Etichette lunghe**: Mermaid gitGraph usa una spaziatura fissa (~40 unità SVG per commit) e non la espone in configurazione (`nodeLabel.width` è ignorato). Oltre ~8 caratteri le etichette di commit adiacenti nella stessa lane possono sovrapporsi e risultare tagliate: non è un difetto dello script né del PNG (che è solo l'output del renderer, non un file ritoccabile). Rimedio: `--label-len` contenuto (10-12) e/o `-n` ridotto, accettando subject abbreviati.
 - `--png` dipende da `mmdc` e da un Chromium: se manca un pezzo lo script esce con il messaggio giusto (installazione e diagnosi in `references/png-setup.md`).
 - Nessuna pagina pubblicata: il rendering lo fa `mmdc` in locale, la preview di VS Code (estensione Mermaid Chart, richiede workspace trusted) o mermaid.live.
 - Nessun file `.md` viene scritto senza `-o`: l'agente sceglie il path e lo dice all'utente.

@@ -102,9 +102,24 @@ grep -q 'tag: "feat: configurazione molto lunga delle etichette nei diagrammi"' 
   || { echo "FAIL: --label-len 0 non tiene il soggetto intero"; fail=1; }
 lout12=$(python3 "$here/scripts/gitgraph.py" "$lab" --label-len 12) \
   || { echo "FAIL: --label-len 12 exit non-zero"; exit 1; }
-grep -q 'tag: "feat:…"' <<<"$lout12" || { echo "FAIL: --label-len 12 non tronca"; fail=1; }
+grep -q 'tag: "feat: confi…"' <<<"$lout12" || { echo "FAIL: --label-len 12 non tronca"; fail=1; }
 python3 "$tmp/maxlabel.py" 12 <<<"$lout12" \
   || { echo "FAIL: --label-len 12, etichetta oltre 12 caratteri"; fail=1; }
+
+# soggetto convenzionale reale: la troncatura non deve collassare il testo utile
+conv="$tmp/conv"; git init -q -b main "$conv"
+vg(){ git -C "$conv" -c user.email=t@t.t -c user.name=t "$@"; }
+echo v > "$conv/f.txt"; vg add -A; vg commit -qm "feat: add-idempotency-key-rotation"
+vout=$(python3 "$here/scripts/gitgraph.py" "$conv") || { echo "FAIL: soggetto convenzionale, exit non-zero"; exit 1; }
+vl=$(sed -n 's/.* tag: "\(.*\)"/\1/p' <<<"$vout")
+python3 - "$vl" <<'PY' || fail=1
+import sys
+s = sys.argv[1]
+if not s.endswith("…") or len(s) < 16:
+    sys.exit(f"FAIL: etichetta collassata ({len(s)} caratteri): {s!r}")
+if "add-idempotency" not in s:
+    sys.exit(f"FAIL: caratteri distintivi persi: {s!r}")
+PY
 
 if command -v mmdc >/dev/null; then
   python3 "$here/scripts/gitgraph.py" . --png "$tmp/out.png" 2>/dev/null
