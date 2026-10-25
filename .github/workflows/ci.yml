@@ -1,0 +1,95 @@
+name: CI
+
+# Gate di push: un `pi install git:...` senza ref preleva main, quindi main deve
+# essere sempre verde. La matrice copre i due estremi dichiarati in README
+# ("python3 >= 3.8"), il job png impedisce che --png sparisca dietro uno SKIP.
+#
+# Nota su --png: il render richiede mmdc + Chromium (vedi
+# skills/gitgraph/references/png-setup.md). Qui Chromium lo scarica puppeteer
+# (~/.cache/puppeteer, gia' fra i path cercati da scripts/gitgraph.py) e lo SKIP
+# non e' ammesso. In locale, senza mmdc/Chromium, selftest.sh stampa "SKIP: mmdc
+# assente": resta possibile solo li', fuori dalla CI.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    name: selftest py${{ matrix.python }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.8', '3.12']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: py_compile
+        run: >-
+          python -m py_compile
+          skills/gitgraph/scripts/gitgraph.py
+          skills/gitgraph/tests/test_gitgraph.py
+      - name: selftest.sh
+        run: bash skills/gitgraph/tests/selftest.sh
+
+  png:
+    name: png render (mmdc 12.0.0 + Chromium)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # mmdc pinnato: la 12 ha cambiato i flag (--size al posto di -w) e
+      # scripts/gitgraph.py usa --size. Niente PUPPETEER_SKIP_DOWNLOAD: puppeteer
+      # porta il suo Chromium in ~/.cache/puppeteer, che gitgraph.py sa trovare.
+      - name: install mmdc + Chromium
+        run: |
+          npm i -g @mermaid-js/mermaid-cli@12.0.0
+          mmdc --version | grep -qx '12\.0\.0'
+          python -c "import sys; sys.path.insert(0, 'skills/gitgraph/scripts'); import gitgraph; c = gitgraph.chrome_bin(); print('chromium:', c); sys.exit(0 if c else 1)"
+      - name: selftest.sh senza SKIP
+        run: |
+          out=$(bash skills/gitgraph/tests/selftest.sh) && rc=0 || rc=$?
+          printf '%s\n' "$out"
+          if grep -q '^SKIP' <<<"$out"; then
+            echo 'FAIL: SKIP non ammesso in CI, il path --png deve girare qui'
+            exit 1
+          fi
+          grep -qx 'OK' <<<"$out" || { echo 'FAIL: selftest senza OK'; exit 1; }
+          exit "$rc"
+
+  secrets:
+    name: secret scan (gitleaks 8.30.1)
+    runs-on: ubuntu-latest
+    steps:
+      # fetch-depth: 0 -> lo scan copre tutta la storia, non solo l'ultimo commit.
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: install gitleaks
+        run: |
+          url=https://github.com/gitleaks/gitleaks/releases/download/v8.30.1
+          curl -sSfLO "$url/gitleaks_8.30.1_linux_x64.tar.gz"
+          curl -sSfLO "$url/gitleaks_8.30.1_checksums.txt"
+          sha256sum --ignore-missing -c gitleaks_8.30.1_checksums.txt
+          tar -xzf gitleaks_8.30.1_linux_x64.tar.gz gitleaks
+      # --redact: in un repo pubblico il log non deve contenere il segreto trovato.
+      - name: gitleaks git (history)
+        run: ./gitleaks git --redact --no-banner --exit-code 1 .

@@ -98,6 +98,17 @@ Cosa fa: costruisce un repo usa-e-getta (ramo `feature/x`, un merge `--no-ff`, u
 
 Output atteso: `OK` e exit code 0. Qualunque altra cosa è un fallimento.
 
+### CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) gira su push di `main`, sui tag `v*` e sulle
+pull request: `selftest.sh` + `py_compile` su Python 3.8 e 3.12, un job `png` (mmdc 12.0.0 + Chromium,
+dove lo `SKIP` non è ammesso), e `gitleaks` su tutta la storia. Lo stesso gate in locale, senza runner:
+
+```bash
+bash skills/gitgraph/tests/selftest.sh          # locale: --png può finire in SKIP se manca mmdc
+python3 -m py_compile skills/gitgraph/scripts/gitgraph.py skills/gitgraph/tests/test_gitgraph.py
+```
+
 Verifica manuale su un repo vero:
 
 ```bash
