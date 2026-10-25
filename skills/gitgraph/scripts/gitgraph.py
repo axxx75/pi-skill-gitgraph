@@ -22,7 +22,7 @@ def git(repo, *args, strict=True):
     return r.stdout
 
 
-def name(branch):
+def slug(branch):
     # mermaid vuole nomi ramo senza spazi: slash e simili diventano underscore
     return re.sub(r"[^A-Za-z0-9_-]", "_", branch) or "branch"
 
@@ -138,21 +138,40 @@ def main():
     def commit_line(h):
         emit(f'commit id: "{short[h]}" tag: "{tag_of(h, label(commits[h][1]))}"')
 
-    def header(branch):
+    def header(branch_name):
         out.append('%%{init: {"gitGraph": {"mainBranchName": "'
-                   + name(branch) + '"}}}%%')
+                   + branch_name + '"}}}%%')
         out.append("gitGraph")
 
     if a.linear:
         # ordine parents-first, senza rami: il nome serve solo all'etichetta del ramo
         # HEAD puo' non risolvere (ref puntato ma mai committato): non e' fatale
         head = git(a.repo, "rev-parse", "--abbrev-ref", "HEAD", strict=False).strip()
-        header("main" if head in ("", "HEAD") else head)
+        header(slug("main" if head in ("", "HEAD") else head))
         for h in reversed(list(commits)):
             commit_line(h)
     else:
         owner = {}  # commit -> ramo che lo rivendica
-        for ref, sha in branch_tips(a.repo):
+        tips = branch_tips(a.repo)
+        names, taken = {}, set()  # unica mappa raw -> nome Mermaid (nessuna collisione)
+
+        def uname(branch):
+            """raw -> nome Mermaid unico: nomi diversi non possono collassare in una lane."""
+            if branch not in names:
+                base = slug(branch)
+                cand, i = base, 1
+                while cand in taken:
+                    i += 1
+                    cand = f"{base}_{i}"
+                if cand != base:
+                    sys.stderr.write(
+                        f'warning: ramo "{branch}": "{base}" occupato, uso "{cand}"\n')
+                names[branch] = cand
+                taken.add(cand)
+            return names[branch]
+
+        for ref, sha in tips:
+            uname(ref)  # la frontiera rivendica i nomi per prima (main/master in testa)
             for h in git(a.repo, "rev-list", "--first-parent", f"-n{a.n}", sha).split():
                 owner.setdefault(h, ref)
 
@@ -178,20 +197,23 @@ def main():
         roots = [h for h in commits if not parents_of(h)]
         start = roots[-1] if roots else next(reversed(commits))
         start_branch = owner.get(start, "main")
-        header(start_branch)
+        header(uname(start_branch))
 
         heads, finished, deferred = {}, set(), []
-        created, state = {name(start_branch)}, [start_branch]  # state[0] = ramo corrente
+        # stato in un solo dominio (nomi Mermaid): lane corrente + lane gia' emesse
+        first = uname(start_branch)
+        state = {"cur": first, "made": {first}}
 
         def switch(branch):
-            if state[0] == branch:
+            n = uname(branch)
+            if state["cur"] == n:
                 return
-            if name(branch) in created:
-                emit(f"checkout {name(branch)}")
+            if n in state["made"]:
+                emit(f"checkout {n}")
             else:
-                emit(f"branch {name(branch)}")
-                created.add(name(branch))
-            state[0] = branch
+                emit(f"branch {n}")
+                state["made"].add(n)
+            state["cur"] = n
 
         def emit_commit(h, branch):
             par = parents_of(h)
@@ -199,7 +221,7 @@ def main():
                 side = owner.get(par[1]) or next(
                     (b for b, tip in heads.items() if tip == par[1]), None)
                 if side and side != branch and heads.get(side) == par[1]:
-                    emit(f'merge {name(side)} id: "{short[h]}" tag: "{tag_of(h, label(commits[h][1]))}"')
+                    emit(f'merge {uname(side)} id: "{short[h]}" tag: "{tag_of(h, label(commits[h][1]))}"')
                     return
             commit_line(h)
 

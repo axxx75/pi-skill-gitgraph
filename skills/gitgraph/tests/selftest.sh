@@ -53,6 +53,25 @@ tail -1 <<<"$md" | grep -qx '```' || { echo "FAIL: --md non chiude il fence"; fa
 
 python3 "$here/scripts/gitgraph.py" "$tmp/f.txt" >/dev/null 2>&1 && { echo "FAIL: file non-repo accettato"; fail=1; }
 
+# collisione di nomi sanificati: feature/x e feature_x sono due rami, non una lane
+col="$tmp/col"; git init -q -b main "$col"
+cg(){ git -C "$col" -c user.email=t@t.t -c user.name=t "$@"; }
+cc(){ echo "$1" > "$col/f-$1.txt"; cg add -A; cg commit -qm "$1"; }
+cc A; cc B
+cg checkout -qb feature/x; cc C
+cg checkout -q main; cg checkout -qb feature_x; cc D
+cg checkout -q main; cg merge -q --no-ff feature/x -m MX
+cg merge -q --no-ff feature_x -m MY; cc E
+cout=$(python3 "$here/scripts/gitgraph.py" "$col" 2>"$tmp/col.err") || { echo "FAIL: collisione, exit non-zero"; exit 1; }
+grep -qx '    branch feature_x' <<<"$cout" || { echo "FAIL: collisione, manca branch feature_x"; fail=1; }
+grep -qx '    branch feature_x_2' <<<"$cout" || { echo "FAIL: collisione, manca branch feature_x_2"; fail=1; }
+grep -q '    merge feature_x id: ' <<<"$cout" || { echo "FAIL: collisione, manca merge feature_x"; fail=1; }
+grep -q '    merge feature_x_2 id: ' <<<"$cout" || { echo "FAIL: collisione, manca merge feature_x_2"; fail=1; }
+grep -q 'warning: ramo "feature[/_]x": "feature_x"' "$tmp/col.err" \
+  || { echo "FAIL: collisione, nessun warning su stderr"; fail=1; }
+[ "$(grep -c 'commit id:\|merge .* id:' <<<"$cout")" -eq 7 ] \
+  || { echo "FAIL: collisione, commit persi"; fail=1; }
+
 if command -v mmdc >/dev/null; then
   python3 "$here/scripts/gitgraph.py" . --png "$tmp/out.png" 2>/dev/null
   [ -s "$tmp/out.png" ] || { echo "FAIL: --png non produce il file"; fail=1; }
