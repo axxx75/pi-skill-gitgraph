@@ -148,7 +148,8 @@ class SettleTest(unittest.TestCase):
         g.header("main")
         g.finished.add("A")  # scenario: catena camminata solo in parte
         g.report_lost()
-        self.assertEqual(warnings, ["warning: 2 commit fuori dalle catene principali\n"])
+        self.assertEqual(warnings,
+                         [gitgraph.WARN_LOST.format(n=2, window=gitgraph.WINDOW_DEFAULT * 2)])
         self.assertEqual([line for line in g.out if ' id: "' in line],
                          ['    commit id: "b" tag: "b"',
                           '    commit id: "c" tag: "c"'])
@@ -282,6 +283,61 @@ class FlagPolicyTest(unittest.TestCase):
                 gitgraph.main()  # nessun SystemExit
             with open(path, encoding="utf-8") as f:
                 self.assertTrue(f.read().startswith("```mermaid\n"))
+
+
+class OutputMessageTest(unittest.TestCase):
+    """P2-06: il messaggio di -o conta i commit (non le righe Mermaid) e dice il path assoluto."""
+
+    def test_conteggio_commit_e_path_assoluto(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "g.mmd")
+            argv = ["gitgraph.py", ".", "-o", path, "--md"]
+            with mock.patch.object(gitgraph.sys, "argv", argv), \
+                    mock.patch.object(gitgraph, "read_graph",
+                                      return_value=linear_fixture() + ({}, [], "")), \
+                    contextlib.redirect_stderr(io.StringIO()) as err:
+                gitgraph.main()
+        # --md aggiunge due fence e l'init non e' un commit: il conteggio e' 3
+        self.assertEqual(err.getvalue(), f"3 commit -> {os.path.abspath(path)}\n")
+
+
+class ContractTextTest(unittest.TestCase):
+    """P2-06: warning e percorsi Chromium hanno una sola fonte; la doc li ripete,
+    questo test impedisce che le copie divergano in silenzio."""
+
+    ROOT = os.path.dirname(os.path.dirname(os.path.dirname(
+        os.path.dirname(os.path.abspath(__file__)))))
+    PHRASES = ("commit fuori dalle catene principali", "merge non ricostruiti")
+
+    def read(self, *parts):
+        with open(os.path.join(self.ROOT, *parts), encoding="utf-8") as f:
+            return f.read()
+
+    def test_warning_restano_il_contratto_di_skill_md(self):
+        for const, phrase in zip((gitgraph.WARN_LOST, gitgraph.WARN_DEFERRED), self.PHRASES):
+            with self.subTest(phrase=phrase):
+                text = const.format(n=3, window=60)
+                self.assertTrue(text.startswith(f"warning: 3 {phrase}"), text)
+                # l'hint dice cosa fare, dopo la frase contrattuale (D3: frase invariata)
+                self.assertIn("-n 60", text)
+
+    def test_frasi_dei_warning_citate_in_readme_e_skill(self):
+        for doc in ("README.md", "skills/gitgraph/SKILL.md"):
+            text = self.read(*doc.split("/"))
+            for phrase in self.PHRASES:
+                with self.subTest(doc=doc, phrase=phrase):
+                    self.assertIn(phrase, text)
+
+    def test_requisito_pi_dichiarato_nel_frontmatter(self):
+        frontmatter = self.read("skills", "gitgraph", "SKILL.md").split("---\n")[1]
+        line = next(l for l in frontmatter.splitlines() if l.startswith("compatibility:"))
+        self.assertIn("pi >= 1.4", line)
+
+    def test_percorsi_chromium_allineati_alla_doc(self):
+        doc = self.read("skills", "gitgraph", "references", "png-setup.md")
+        for pattern in gitgraph.CHROME_PATTERNS:
+            with self.subTest(pattern=pattern):
+                self.assertIn(pattern, doc)
 
 
 class TrunkTest(unittest.TestCase):

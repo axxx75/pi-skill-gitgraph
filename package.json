@@ -3,6 +3,13 @@
   "version": "1.0.2",
   "description": "Skill gitgraph per pi: storia di un repo Git come grafo Mermaid gitGraph (rami, fork e merge ricostruiti) con render PNG opzionale.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/axxx75/pi-skill-gitgraph.git"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "keywords": [
     "pi-package",
     "pi-skill",

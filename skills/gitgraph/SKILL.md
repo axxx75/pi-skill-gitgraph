@@ -2,7 +2,7 @@
 name: gitgraph
 description: "Genera la storia di un repository Git come grafo Mermaid gitGraph (rami, fork e merge ricostruiti, non fila indiana) in un file .md per la preview di VS Code o da incollare su mermaid.live. Usa quando l'utente chiede di vedere o visualizzare la storia, il grafo o l'albero dei commit di un repo, o quando nomina gitGraph / mermaid e git."
 license: MIT
-compatibility: "python3 >= 3.8, git >= 2.20; mmdc + Chromium solo per --png"
+compatibility: "pi >= 1.4, python3 >= 3.8, git >= 2.20; mmdc + Chromium solo per --png"
 ---
 
 # gitGraph — storia git come grafo Mermaid

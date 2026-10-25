@@ -21,6 +21,24 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   perché più rami = più lento); nuova sezione «Limiti noti» con bare repo rifiutati e directory di
   output non create; i casi già risolti (tag con spazio, escaping) sono scritti nella forma
   definitiva, non come limiti.
+- P2-09: `selftest.sh` ora è fail-fast (`set -euo pipefail`), i file di commit usano un contatore
+  deterministico (niente `date +%s%N`) e `git init -b` ha il fallback senza `-b` per git < 2.28
+  (soglia dichiarata invariata a 2.20). Nuovi casi: `-n` (conteggio e rifiuto di `0`), repo a un
+  commit, repo vuoto, clone `--depth 1`. README §Verify dichiara anche cosa **non** è coperto.
+- P2-11: installazione di `mmdc` pinnata alla versione esatta `12.0.0` con `--ignore-scripts`
+  (nessuno script di install del pacchetto) in README e `references/png-setup.md`; `selftest.sh`
+  confronta `mmdc --version` con `12.0.0` e, se diversa, lo dice su stderr proseguendo: è un avviso,
+  non un gate. Nessuna promessa di riproducibilità byte-per-byte dell'asset.
+- P2-06: `WARN_LOST`, `WARN_DEFERRED` e `CHROME_PATTERNS` sono l'unica fonte (codice, test e doc);
+  la frase contrattuale dei due warning resta identica e riceve in coda l'hint operativo
+  (`-n 60` con il default 30). Il messaggio di `-o` diventa `N commit -> /path/assoluto`: conta i soli
+  `commit id:` (non la direttiva `%%{init}%%` né i fence) e non usa più un path relativo.
+- P2-12: `package.json` ha `repository` e `engines` (`node >= 22.19.0`, requisito del runtime pi 1.4.0,
+  che copre anche mmdc 12.0.0); `docs/packages.md` di pi non prevede un campo per il requisito minimo
+  di `pi`, quindi `pi >= 1.4` sta nel front-matter `compatibility` di `SKILL.md` (con python3/git/mmdc),
+  ripetuto in README. Nuovo `.gitattributes`
+  (`skills/gitgraph/assets/example.png binary`) e README che dichiara l'esempio un'**illustrazione,
+  non un golden file**, con la ricetta esatta (mmdc 12.0.0 e Chromium non registrato).
 
 ### Note
 

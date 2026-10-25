@@ -6,16 +6,21 @@ Serve solo per consegnare un'immagine (report, Telegram, documenti).
 ## 1. mmdc (mermaid-cli)
 
 ```bash
-PUPPETEER_SKIP_DOWNLOAD=1 npm i -g --prefix ~/.local @mermaid-js/mermaid-cli@12
+PUPPETEER_SKIP_DOWNLOAD=1 npm i -g --prefix ~/.local --ignore-scripts @mermaid-js/mermaid-cli@12.0.0
 ln -sf ~/.local/lib/node_modules/@mermaid-js/mermaid-cli/src/cli.js ~/bin/mmdc   # ~/bin deve essere nel PATH
 mmdc --version
 ```
 
 `PUPPETEER_SKIP_DOWNLOAD=1` evita il download di ~150 MB di Chromium: la skill riusa un
-Chromium già presente sulla macchina.
+Chromium già presente sulla macchina. `--ignore-scripts` non esegue gli script di install del
+pacchetto (nessuna post-install dal registry).
 
-**Pinnare la major**: la 12 ha cambiato i flag (`-w/--width` non esiste più → `--size`),
-e la skill usa `--size`, `-b white`, `-q`, `-p`.
+**Versione esatta (`12.0.0`)**: è quella con cui è stato generato `assets/example.png`. Due 12.x
+installate a distanza di mesi possono produrre render diversi, quindi `selftest.sh` confronta
+`mmdc --version` con `12.0.0` e, se diversa, stampa un `WARN` su `stderr` e prosegue: il render
+deve riuscire lo stesso (un confronto bloccante renderebbe il path `--png` non installabile con
+altre 12.x). La 12 ha cambiato i flag (`-w/--width` non esiste più → `--size`), e la skill usa
+`--size`, `-b white`, `-q`, `-p`.
 
 ## 2. Chromium
 
