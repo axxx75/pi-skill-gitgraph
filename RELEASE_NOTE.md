@@ -4,7 +4,12 @@ Formato: una sezione per versione, dalla più recente. Ogni voce = modifica test
 allineata su tre punti (repo locale `~/PI/repos/pi-skill-gitgraph`, checkout installato, GitHub).
 Le versioni precedenti sono ricostruibili dalla storia git.
 
-## 1.1.0 — in preparazione (non pubblicata)
+## 1.1.0 — 2026-10-25
+
+**Release della remediation AARP completa: 25 task chiusi (4 P0, 6 P1, 15 P2).**
+Baseline era 1.0.2; audit del 2026-10-25 con 6 auditor + review indipendente per ogni task.
+62 → 72 unittest, selftest fail-fast, CI con matrice Python, gate di release verifica­bile (`check-release.sh`).
+
 
 - P1-03: un solo meccanismo di avanzamento in `settle()`; `deferred` è un `set` di diagnostica,
   niente doppia lista da tenere allineata. Warning dei commit persi derivato da
