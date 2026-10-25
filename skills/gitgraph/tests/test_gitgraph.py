@@ -304,6 +304,28 @@ class TrunkTest(unittest.TestCase):
         self.assertEqual(out[0], init(gitgraph.MAIN_NAMES[0]))
 
 
+class WorktreeTest(unittest.TestCase):
+    """P2-05: il messaggio "non e' un repository git" deve essere raggiungibile."""
+
+    def test_path_inesistente_messaggio_dedicato(self):
+        with tempfile.TemporaryDirectory() as d:
+            missing = os.path.join(d, "manca")
+            with self.assertRaises(gitgraph.GitError) as cm:
+                gitgraph.read_graph(missing, 10)
+        self.assertIn("non e' un repository git", str(cm.exception))
+        self.assertNotIn("fatal", str(cm.exception))  # niente errore grezzo di git
+
+    def test_bare_repo_rifiutato_con_lo_stesso_messaggio(self):
+        with tempfile.TemporaryDirectory() as d:
+            gitgraph.git(d, "init", "-q", "--bare")
+            with self.assertRaisesRegex(gitgraph.GitError, "non e' un repository git"):
+                gitgraph.read_graph(d, 10)
+
+    def test_is_worktree_falso_non_solleva(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertFalse(gitgraph.is_worktree(os.path.join(d, "manca")))
+
+
 class GitErrorTest(unittest.TestCase):
     def test_git_solleva_errore_tipizzato(self):
         with tempfile.TemporaryDirectory() as d:

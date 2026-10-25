@@ -23,7 +23,7 @@ python3 {baseDir}/scripts/gitgraph.py [REPO] [-n 30] [-o FILE] [--md] [--png FIL
 | `--md` | avvolge l'output nel fence ```` ```mermaid ````: `-o grafo.md` è pronto per la preview |
 | `--png FILE` | renderizza il PNG con `mmdc` (largo 1600px, sfondo bianco); niente stdout; incompatibile con `-o`/`--md` (exit 2) |
 | `--linear` | fila indiana, un solo ramo: ripiego se la ricostruzione esce sbagliata |
-| `--label-len N` | caratteri massimi del testo dell'etichetta, troncato a confine di parola con `…` (default 32; `0` = soggetto intero, 10-12 per grafi stretti); con più tag `+N` è accodato a parte |
+| `--label-len N` | caratteri massimi del testo dell'etichetta, troncato a confine di parola con `…` (default 32, ellissi compresa, `0` = soggetto intero, 10-12 per grafi stretti); con più tag `+N` è accodato a parte |
 
 stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` lo stdout resta vuoto. Le destinazioni sono esclusive: `--png` **non si combina** con `-o` né con `--md` (errore, exit 2: scegli una destinazione), mentre `-o` con `--md` resta valido — per avere PNG e `.md` invoca lo script due volte. Warning e diagnostica vanno su stderr. `--png` richiede `mmdc` e un Chromium: installazione e diagnosi in `references/png-setup.md`.
 
@@ -38,7 +38,7 @@ stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` lo stdout re
 
 - Una lane per ramo locale o remoto distinto, aperta al fork point reale (first-parent), chiusa con `merge <ramo> id: "<hash>"`.
 - Catene laterali senza ref (tipiche dei merge PR): lane sintetica `merge_<hash>`.
-- `tag:` = tag git reale se il commit ne ha uno (con più tag: il primo più `+N`; un tag più lungo di `--label-len` viene comunque troncato), altrimenti subject troncato a `--label-len` caratteri (default 32) a confine di parola con `…`, con taglio duro se il confine lascerebbe meno di metà del testo.
+- `tag:` = tag git reale se il commit ne ha uno (con più tag: il primo più `+N`; un tag più lungo di `--label-len` viene comunque troncato), altrimenti subject troncato a `--label-len` caratteri (default 32, ellissi `…` compresa) a confine di parola, con taglio duro se il confine lascerebbe meno di metà del testo.
 - Nomi ramo sanificati per Mermaid: `feature/x` → `feature_x`.
 
 ## Limiti

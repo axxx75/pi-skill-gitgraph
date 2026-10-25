@@ -13,9 +13,17 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   sparsi; trunk preso dal nome reale di `HEAD` con fallback dichiarato; `--png` esclusivo con
   `-o`/`--md` e `-n < 1` rifiutato con `ap.error`; `render_png()` perde il parametro `size`,
   che nessun chiamante passava.
+- P2-05: `is_worktree()` emette davvero `non e' un repository git` (su un path inesistente o un
+  file l'errore grezzo di git usciva prima); doc allineata al troncamento reale (l'ellissi `…`
+  sta dentro `--label-len`, non oltre); `selftest.sh` verifica il testo del messaggio, non solo
+  l'exit code.
 
 ### Note
 
+- **Messaggio raggiungibile (P2-05).** Un path inesistente, un file o un bare repo ora escono con
+  `non e' un repository git` (exit 1, invariato), non più con `git rev-parse ...: fatal: ...`.
+  Il contratto di `--label-len` è "N caratteri, ellissi compresa": il vecchio `32 + "..." = 35`
+  non esiste più da quando `label()` tronca dentro il limite, e README/SKILL lo dicono così.
 - **Cambio di comportamento (P2-04).** `--png` insieme a `-o` oppure a `--md` ora è un errore
   (`ap.error`, exit 2, nessun file scritto) invece dello scarto silenzioso di `-o`/`--md`; `-n < 1`
   risponde `serve -n >= 1` invece del fuorviante `nessun commit trovato`. `-o` con `--md` resta

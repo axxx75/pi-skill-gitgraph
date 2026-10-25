@@ -51,7 +51,15 @@ md=$(python3 "$here/scripts/gitgraph.py" . --md) || { echo "FAIL: --md exit non-
 head -1 <<<"$md" | grep -qx '```mermaid' || { echo "FAIL: --md non apre il fence"; fail=1; }
 tail -1 <<<"$md" | grep -qx '```' || { echo "FAIL: --md non chiude il fence"; fail=1; }
 
-python3 "$here/scripts/gitgraph.py" "$tmp/f.txt" >/dev/null 2>&1 && { echo "FAIL: file non-repo accettato"; fail=1; }
+# path non-repo: deve arrivare il messaggio documentato (non l'errore grezzo di git), con exit 1
+printf 'non sono un repo\n' > "$tmp/f.txt"
+git init -q --bare "$tmp/bare"
+for bad in "$tmp/f.txt" "$tmp/manca" "$tmp/bare"; do
+  err=$(python3 "$here/scripts/gitgraph.py" "$bad" 2>&1 >/dev/null); rc=$?
+  [ "$rc" -eq 1 ] || { echo "FAIL: $bad, exit $rc (atteso 1)"; fail=1; }
+  grep -q "non e' un repository git" <<<"$err" \
+    || { echo "FAIL: $bad, messaggio non-repo assente: $err"; fail=1; }
+done
 
 # -o: parita' byte-identica con stdout, nessun .tmp orfano, path invalido = una riga su stderr
 o=$(python3 "$here/scripts/gitgraph.py" .) || { echo "FAIL: stdout exit non-zero"; exit 1; }

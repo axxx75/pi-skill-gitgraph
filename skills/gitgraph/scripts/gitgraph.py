@@ -39,6 +39,12 @@ def git(repo, *args, strict=True):
     return r.stdout
 
 
+def is_worktree(repo):
+    """`git rev-parse --is-inside-work-tree` senza GitError: su un path che non e' un repo
+    (nessuna directory, bare) deve arrivare il messaggio dedicato, non l'errore grezzo di git."""
+    return git(repo, "rev-parse", "--is-inside-work-tree", strict=False).strip() == "true"
+
+
 def slug(branch):
     """Nome ramo per Mermaid: solo [A-Za-z0-9_-], fallback "branch" se resta vuoto."""
     return re.sub(r"[^A-Za-z0-9_-]", "_", branch) or "branch"
@@ -62,12 +68,12 @@ def escape(text):
 
 
 def label(text, limit=LABEL_LEN_DEFAULT):
-    """Soggetto su una riga (spazi collassati, escape Mermaid), troncato a `limit` DOPO la
-    normalizzazione, a confine di parola con ellissi (limit <= 0: intero).
+    """Soggetto su una riga (spazi collassati, escape Mermaid), troncato a `limit` caratteri
+    DOPO la normalizzazione, ellissi compresa, a confine di parola (limit <= 0: intero).
 
     Unico punto di escaping: ogni testo di git finisce qui (via tag_of), mentre i nomi
     ramo arrivano gia' ridotti a [A-Za-z0-9_-] da slug() e gli hash sono esadecimali.
-    `limit` conta i caratteri del soggetto: l'escape puo' allungare l'etichetta.
+    `limit` conta i caratteri del soggetto, `…` incluso: l'escape puo' allungare l'etichetta.
     """
     text = " ".join(str(text).split())
     if limit <= 0 or len(text) <= limit:
@@ -171,7 +177,7 @@ def write_atomic(path, text):
 
 def read_graph(repo, n, linear=False):
     """Legge da git i dati che render() consuma: unica porta verso git del modulo."""
-    if git(repo, "rev-parse", "--is-inside-work-tree").strip() != "true":
+    if not is_worktree(repo):
         raise GitError(f"{repo}: non e' un repository git")
 
     # commit -> ([parents], subject), dal piu' recente al piu' vecchio
