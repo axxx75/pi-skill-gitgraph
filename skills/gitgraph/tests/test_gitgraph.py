@@ -151,6 +151,34 @@ class SettleTest(unittest.TestCase):
                          ['    commit id: "b" tag: "b"',
                           '    commit id: "c" tag: "c"'])
 
+    def test_genitore_duplicato_non_lascia_warning_falso(self):
+        # caso non creabile da git normale (solo via .git/info/grafts), dichiarato
+        # nel docstring di settle(): il set deduplica, il vecchio falso warning sparisce
+        commits = {"c00": (["c02", "c02"], "0"),
+                   "c01": (["c02"], "1"),
+                   "c02": (["out2"], "2")}
+        warnings = []
+        g = gitgraph.Graph(commits, {h: h for h in commits}, {},
+                           warn=warnings.append)
+        g.claim([("side", "c01"), ("main", "c01")])
+        g.header(g.uname(g.start_branch))
+        g.walk(g.start, g.start_branch)
+        g.settle()
+        g.report_lost()
+        self.assertEqual(g.deferred, set())
+        self.assertEqual(warnings, [])
+
+    def test_report_lost_non_negativo_se_finished_esce_da_commits(self):
+        commits = {"C": (["B"], "c"), "B": (["A"], "b"), "A": ([], "a")}
+        warnings = []
+        g = gitgraph.Graph(commits, {h: h.lower() for h in commits}, {},
+                           warn=warnings.append)
+        g.claim([])
+        g.header("main")
+        g.finished.update(set(commits) | {"fuori"})  # hash non in commits
+        g.report_lost()
+        self.assertEqual(warnings, [])
+
 
 class RenderLabelTest(unittest.TestCase):
     SUBJECT = "feat: configurazione molto lunga delle etichette nei diagrammi"

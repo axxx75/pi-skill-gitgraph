@@ -325,11 +325,18 @@ class Graph:
         """Unico worklist: riprende i commit sbloccati finche' ne restano; `deferred`
         e' solo il set dei merge mai ricostruiti (diagnostica, dedup gratuito).
 
-        Invariante di terminazione: `walk(h)` marca sempre `h` in `finished`, quindi
-        ogni giro prosciuga almeno un candidato — `todo` non vuota implica che ogni
-        suo `h` o e' gia' finito (walk ricorsivo) o viene camminato qui, e in entrambi
-        i casi `len(finished)` cresce. Essendo limitata da `len(commits)`, la crescita
-        garantisce l'uscita anche su un input degenere: nessun ciclo possibile.
+        Terminazione: il primo `h` di `todo` e' ancora `ready` (nessuna mutazione tra
+        la list comprehension e il loop), quindi `walk` lo marca in `finished`: ogni
+        giro cresce `len(finished)` di almeno 1 (i successivi possono essere gia'
+        finiti dal `walk` ricorsivo). `finished` e' monotono e limitato da
+        `len(commits)`, quindi il ciclo esce sempre, anche su input degenere.
+
+        Cambio dichiarato rispetto alla lista: il set deduplica, quindi un commit con
+        lo stesso genitore ripetuto (es. `c00 -> c02, c02`, che finisce due volte in
+        `children[c02]` e veniva accodato due volte, con una sola `remove`) non lascia
+        piu' un falso "warning: N merge non ricostruiti". Caso non creabile con git
+        normale (`commit-tree` scarta i parent duplicati): raggiungibile solo via
+        `.git/info/grafts`; stdout invariato.
         """
         while True:
             todo = [h for h in reversed(list(self.commits)) if self.ready(h)]
@@ -345,8 +352,9 @@ class Graph:
 
     def report_lost(self):
         """Reti di sicurezza: nulla sparisce in silenzio, i buchi diventano warning."""
-        # conteggio derivato (finished e' sottoinsieme di commits): un solo numero da tenere
-        lost = len(self.commits) - len(self.finished)
+        # conteggio derivato: nella CLI finished e' sottoinsieme di commits, il max(0, ...)
+        # copre un chiamante che inietta hash estranei (nessun conteggio negativo)
+        lost = max(0, len(self.commits) - len(self.finished))
         if lost:
             self.say(f"warning: {lost} commit fuori dalle catene principali\n")
             self.switch(self.start_branch)
