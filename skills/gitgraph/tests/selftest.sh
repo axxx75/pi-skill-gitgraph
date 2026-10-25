@@ -58,6 +58,20 @@ md=$(python3 "$here/scripts/gitgraph.py" . --md) || { echo "FAIL: --md exit non-
 head -1 <<<"$md" | grep -qx '```mermaid' || { echo "FAIL: --md non apre il fence"; fail=1; }
 tail -1 <<<"$md" | grep -qx '```' || { echo "FAIL: --md non chiude il fence"; fail=1; }
 
+# P2-13: tema, font e palette alto contrasto sono leve esplicite nell'init (anche senza mmdc)
+themed=$(python3 "$here/scripts/gitgraph.py" . --theme dark --font 20) \
+  || { echo "FAIL: --theme/--font exit non-zero"; exit 1; }
+tinit=$(head -1 <<<"$themed")
+grep -q '"theme": "dark"' <<<"$tinit" || { echo "FAIL: --theme non riflesso nell'init"; fail=1; }
+grep -q '"fontSize": "20px"' <<<"$tinit" || { echo "FAIL: --font non riflesso nell'init"; fail=1; }
+grep -q '"showCommitLabel": true' <<<"$tinit" \
+  || { echo "FAIL: showCommitLabel assente dall'init"; fail=1; }
+grep -q '"git0": "#0b4f9c"' <<<"$tinit" \
+  || { echo "FAIL: palette alto contrasto assente dall'init"; fail=1; }
+err=$(python3 "$here/scripts/gitgraph.py" . --width 0 2>&1 >/dev/null) && rc=0 || rc=$?
+[ "$rc" -eq 2 ] || { echo "FAIL: --width 0, exit $rc (atteso 2)"; fail=1; }
+grep -q 'serve --width >= 1' <<<"$err" || { echo "FAIL: --width 0, messaggio inatteso: $err"; fail=1; }
+
 # path non-repo: deve arrivare il messaggio documentato (non l'errore grezzo di git), con exit 1
 printf 'non sono un repo\n' > "$tmp/f.txt"
 git init -q --bare "$tmp/bare"
@@ -99,6 +113,57 @@ grep -q 'warning: ramo "feature[/_]x": "feature_x"' "$tmp/col.err" \
   || { echo "FAIL: collisione, nessun warning su stderr"; fail=1; }
 [ "$(grep -c 'commit id:\|merge .* id:' <<<"$cout")" -eq 7 ] \
   || { echo "FAIL: collisione, commit persi"; fail=1; }
+
+# P2-03: dei remoti conta solo origin; i commit raggiungibili solo da upstream non entrano
+rem="$tmp/rem"; init "$rem"
+rg(){ git -C "$rem" -c user.email=t@t.t -c user.name=t "$@"; }
+echo r > "$rem/f.txt"; rg add -A; rg commit -qm R
+tree=$(rg rev-parse HEAD^{tree}); base=$(rg rev-parse HEAD)
+rg update-ref refs/remotes/origin/dev "$(rg commit-tree "$tree" -p "$base" -m "lato origin")"
+rg update-ref refs/remotes/upstream/fork "$(rg commit-tree "$tree" -p "$base" -m "solo upstream")"
+rout=$(python3 "$here/scripts/gitgraph.py" "$rem") || { echo "FAIL: ref remoti, exit non-zero"; exit 1; }
+grep -qx '    branch origin_dev' <<<"$rout" \
+  || { echo "FAIL: manca la lane origin_dev"; fail=1; }
+grep -q 'lato origin' <<<"$rout" \
+  || { echo "FAIL: il commit di origin e' fuori dalla finestra"; fail=1; }
+if grep -q 'upstream' <<<"$rout"; then
+  echo "FAIL: un ref o un commit di upstream e' nel grafo"; fail=1
+fi
+
+# P2-03 retry 2: clone con origin/main == main non deve riammettere i remoti (upstream)
+int="$tmp/wsrc"; init "$int"
+ig(){ git -C "$int" -c user.email=t@t.t -c user.name=t "$@"; }
+echo w > "$int/f.txt"; ig add -A; ig commit -qm "commit locale"
+git clone -q "$int" "$tmp/wclone"
+wc="$tmp/wclone"; wcg(){ git -C "$wc" -c user.email=t@t.t -c user.name=t "$@"; }
+[ "$(wcg rev-parse HEAD)" = "$(ig rev-parse HEAD)" ] \
+  || { echo "FAIL: clone, origin/main != main"; fail=1; }
+up="$tmp/wupstream"; init "$up"
+ug(){ git -C "$up" -c user.email=t@t.t -c user.name=t "$@"; }
+echo u > "$up/f.txt"; ug add -A; ug commit -qm "solo upstream"
+wcg remote add upstream "$up"; wcg fetch -q upstream
+wout=$(python3 "$here/scripts/gitgraph.py" "$wc" -n 300) \
+  || { echo "FAIL: clone con origin dedup, exit non-zero"; exit 1; }
+if grep -q 'upstream' <<<"$wout"; then
+  echo "FAIL: clone con origin dedup, un ref o un commit di upstream e' nel grafo"; fail=1
+fi
+[ "$(grep -c 'commit id:' <<<"$wout")" -eq 1 ] \
+  || { echo "FAIL: clone con origin dedup, atteso 1 commit"; fail=1; }
+if grep -q '^    branch ' <<<"$wout"; then
+  echo "FAIL: clone con origin dedup, lane inattese"; fail=1
+fi
+
+# P2-03: i commit raggiungibili solo da un tag restano nella finestra
+only="$tmp/onlytag"; init "$only"
+otg(){ git -C "$only" -c user.email=t@t.t -c user.name=t "$@"; }
+echo o > "$only/f.txt"; otg add -A; otg commit -qm "commit locale"
+otag=$(otg commit-tree "$(otg rev-parse HEAD^{tree})" -m "solo tag")
+otg tag solo "$otag"
+otag_short=$(otg rev-parse --short "$otag")
+otout=$(python3 "$here/scripts/gitgraph.py" "$only" -n 300) \
+  || { echo "FAIL: commit solo-tag, exit non-zero"; exit 1; }
+grep -q "commit id: \"$otag_short\"" <<<"$otout" \
+  || { echo "FAIL: commit raggiungibile solo da un tag fuori dal grafo"; fail=1; }
 
 # etichette: troncatura a confine di parola, --label-len, multi-tag mai spezzato
 cat > "$tmp/maxlabel.py" <<'PY'
@@ -256,9 +321,28 @@ if command -v mmdc >/dev/null; then
   mmdc_ver=$(mmdc --version 2>/dev/null) || mmdc_ver='sconosciuta'
   [ "$mmdc_ver" = "$MMDC_VERSION" ] \
     || echo "WARN: mmdc $mmdc_ver != $MMDC_VERSION (PNG non confrontabile con l'asset)" >&2
-  python3 "$here/scripts/gitgraph.py" . --png "$tmp/out.png" 2>/dev/null \
+  python3 "$here/scripts/gitgraph.py" . --png "$tmp/out.png" >/dev/null 2>&1 \
     || { echo "FAIL: --png exit non-zero"; exit 1; }
   [ -s "$tmp/out.png" ] || { echo "FAIL: --png non produce il file"; fail=1; }
+  # P2-13: la riga alt e' stdout dell'invocazione --png; --width arriva a mmdc
+  # (commit+merge = 6 righe disegnate, lane feature_x + main)
+  pngout=$(python3 "$here/scripts/gitgraph.py" . --png "$tmp/out.png" 2>/dev/null) \
+    || { echo "FAIL: --png, exit non-zero con stdout catturato"; exit 1; }
+  grep -qx '!\[Storia git: 6 commit su 2 rami\](out.png)' <<<"$pngout" \
+    || { echo "FAIL: riga alt inattesa su stdout: $pngout"; fail=1; }
+  python3 "$here/scripts/gitgraph.py" . --png "$tmp/narrow.png" --width 800 >/dev/null 2>&1 \
+    || { echo "FAIL: --png --width 800 exit non-zero"; exit 1; }
+  python3 - "$tmp/narrow.png" <<'PY' || fail=1
+import struct, sys
+with open(sys.argv[1], "rb") as f:
+    head = f.read(24)
+if head[:8] != b"\x89PNG\r\n\x1a\n" or struct.unpack(">I", head[16:20])[0] != 800:
+    sys.exit("FAIL: --width 800 non rispettata nel PNG")
+PY
+  # P2-02: sandbox attiva di default (il render sopra); GITGRAPH_NO_SANDBOX=1 e' il gate
+  GITGRAPH_NO_SANDBOX=1 python3 "$here/scripts/gitgraph.py" . --png "$tmp/nosandbox.png" >/dev/null 2>&1 \
+    || { echo "FAIL: --png con GITGRAPH_NO_SANDBOX=1, exit non-zero"; exit 1; }
+  [ -s "$tmp/nosandbox.png" ] || { echo "FAIL: GITGRAPH_NO_SANDBOX=1 non produce il file"; fail=1; }
   # il path invalido deve dirlo subito, non travestirsi da "mmdc fallito"
   err=$(python3 "$here/scripts/gitgraph.py" . --png "$tmp/manca/out.png" 2>&1 >/dev/null) \
     && rc=0 || rc=$?

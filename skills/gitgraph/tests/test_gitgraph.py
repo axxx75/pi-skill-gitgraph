@@ -8,6 +8,7 @@ non dipendono da git ne' dal filesystem (unica eccezione: il caso GitError).
 
 import contextlib
 import io
+import json
 import os
 import sys
 import tempfile
@@ -30,7 +31,7 @@ def linear_fixture():
 
 
 def init(name):
-    return f'%%{{init: {{"gitGraph": {{"mainBranchName": "{name}"}}}}}}%%'
+    return gitgraph.init_directive(name)
 
 
 class RenderLinearTest(unittest.TestCase):
@@ -183,6 +184,17 @@ class SettleTest(unittest.TestCase):
         self.assertEqual(warnings, [])
 
 
+class SwitchStateTest(unittest.TestCase):
+    """P2-08: un checkout in coda (ritorno alla lane di partenza) non resta nell'output."""
+
+    def test_checkout_finale_rimosso(self):
+        commits = {"X": (["A"], "x"), "A": ([], "a")}
+        out = gitgraph.render(commits, {"X": "a2", "A": "a1"}, {},
+                              [("main", "A"), ("side", "X")])
+        self.assertEqual(out[-1], '    commit id: "a2" tag: "x"')
+        self.assertFalse([line for line in out if line.strip().startswith("checkout ")])
+
+
 class RenderLabelTest(unittest.TestCase):
     SUBJECT = "feat: configurazione molto lunga delle etichette nei diagrammi"
 
@@ -212,7 +224,8 @@ class RenderLabelTest(unittest.TestCase):
                               linear=True, head="main")
         tags = self.tags_of(out)
         self.assertEqual(tags, ["breve", "t1 +2"])
-        self.assertNotIn("t2", "\n".join(out))
+        # "git2" della palette contiene "t2": si controllano i tag, non tutto l'output
+        self.assertNotIn("t2", " ".join(tags))
 
     def test_virgolette_nel_subject_rese(self):
         commits = {"c1": ([], 'fix "rotto" qui')}
@@ -402,7 +415,8 @@ class GitErrorTest(unittest.TestCase):
                 gitgraph.read_graph(".", 10)
 
     def test_nessun_commit(self):
-        with mock.patch.object(gitgraph, "git", side_effect=["true\n", ""]):
+        # worktree, heads, remotes, log
+        with mock.patch.object(gitgraph, "git", side_effect=["true\n", "", "", ""]):
             with self.assertRaisesRegex(gitgraph.GitError, "nessun commit trovato"):
                 gitgraph.read_graph(".", 10)
 
@@ -415,16 +429,160 @@ class GitErrorTest(unittest.TestCase):
         self.assertEqual(cm.exception.code, "boom")
 
 
+class BranchTipsTest(unittest.TestCase):
+    """P2-03: dei remoti contano solo i ref di origin; i fork/upstream non aprono lane."""
+
+    def tips(self, heads="", remotes=""):
+        def fake(repo, *args):
+            return heads if args[-1] == "refs/heads/" else remotes
+        with mock.patch.object(gitgraph, "git", fake):
+            return gitgraph.branch_tips(".")
+
+    def test_solo_origin_quando_esiste(self):
+        tips = self.tips(heads="refs/heads/main a1 \n",
+                         remotes="refs/remotes/origin/dev a2 \n"
+                                 "refs/remotes/upstream/fork a9 \n")
+        self.assertEqual(tips, [("main", "a1"), ("origin/dev", "a2")])
+
+    def test_senza_origin_restano_i_remoti_presenti(self):
+        self.assertEqual(self.tips(remotes="refs/remotes/upstream/dev a2 \n"),
+                         [("upstream/dev", "a2")])
+
+    def test_ramo_locale_vince_sul_remoto_omonimo(self):
+        self.assertEqual(self.tips(heads="refs/heads/main a1 \n",
+                                   remotes="refs/remotes/origin/main a1 \n"),
+                         [("main", "a1")])
+
+    def test_origin_non_sparisce_se_duplica_il_locale(self):
+        # retry 2: origin/main == main (clone normale) non deve far scattare il ripiego
+        # sui remoti presenti, altrimenti i commit di upstream rientrano nella finestra
+        tips = self.tips(heads="refs/heads/main a1 \n",
+                         remotes="refs/remotes/origin/main a1 \n"
+                                 "refs/remotes/upstream/fork a9 \n")
+        self.assertEqual(tips, [("main", "a1")])
+
+    def test_symref_ignorato(self):
+        # due righe vere: il ref puntato da origin/HEAD resta una lane
+        self.assertEqual(self.tips(remotes="refs/remotes/origin/HEAD a1 refs/remotes/origin/main\n"
+                                            "refs/remotes/origin/main a1 \n"),
+                         [("origin/main", "a1")])
+
+    def test_fork_con_lo_stesso_sha_non_scarta_origin(self):
+        # retry 3: il dedup per SHA vale sul set scelto (locali + origin), non fra i bucket
+        tips = self.tips(heads="refs/heads/main a1 \n",
+                         remotes="refs/remotes/fork/feature a2 \n"
+                                 "refs/remotes/origin/feature a2 \n")
+        self.assertEqual(tips, [("main", "a1"), ("origin/feature", "a2")])
+
+    def test_sola_origin_head_symref_conta_come_origin(self):
+        # retry 3 (a): origin esiste anche se ne resta solo la symref HEAD
+        self.assertEqual(self.tips(remotes="refs/remotes/origin/HEAD a1 refs/remotes/origin/gone\n"
+                                           "refs/remotes/fork/feature a2 \n"),
+                         [])
+
+
+class RefWindowIntTest(unittest.TestCase):
+    """P2-03 retry 2: finestra sui ref tenuti, su repository git veri."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def path(self, name):
+        return os.path.join(self.tmp.name, name)
+
+    def g(self, repo, *args):
+        return gitgraph.git(repo, "-c", "user.email=t@t.t", "-c", "user.name=t", *args)
+
+    def commit(self, repo, name):
+        with open(os.path.join(repo, name), "w", encoding="utf-8") as f:
+            f.write(name)
+        self.g(repo, "add", "-A")
+        self.g(repo, "commit", "-qm", name)
+        return self.g(repo, "rev-parse", "HEAD").strip()
+
+    def init(self, name):
+        repo = self.path(name)
+        os.makedirs(repo)
+        self.g(repo, "init", "-q", "-b", "main")
+        return repo
+
+    def test_clone_con_origin_uguale_a_main_non_riammette_upstream(self):
+        src = self.init("src")
+        first = self.commit(src, "uno")
+        work = self.path("work")
+        gitgraph.git(self.tmp.name, "clone", "-q", src, work)
+        self.assertEqual(self.g(work, "rev-parse", "HEAD").strip(), first)
+        upstream = self.init("upstream")
+        self.commit(upstream, "solo upstream")
+        self.g(work, "remote", "add", "upstream", upstream)
+        self.g(work, "fetch", "-q", "upstream")
+
+        commits, _, _, tips, _ = gitgraph.read_graph(work, 300)
+        self.assertEqual(list(commits), [first])
+        self.assertEqual(tips, [("main", first)])
+        warnings = []
+        gitgraph.render(commits, {first: "a1"}, {}, tips, warn=warnings.append)
+        self.assertEqual(warnings, [])
+
+    def test_commit_raggiungibile_solo_da_un_tag_resta_nella_finestra(self):
+        repo = self.init("tag")
+        self.commit(repo, "uno")
+        tree = self.g(repo, "rev-parse", "HEAD^{tree}").strip()
+        only_tag = self.g(repo, "commit-tree", tree, "-m", "solo tag").strip()
+        self.g(repo, "tag", "solo", only_tag)
+
+        commits, _, tags, tips, _ = gitgraph.read_graph(repo, 300)
+        self.assertIn(only_tag, commits)
+        out = gitgraph.render(commits, {h: h[:7] for h in commits}, tags, tips)
+        self.assertIn(f'commit id: "{only_tag[:7]}"', "\n".join(out))
+
+    def test_fork_con_lo_stesso_sha_non_toglie_la_lane_di_origin(self):
+        # retry 3: fork/* iterato prima di origin/* con lo stesso SHA non deve scartare
+        # il ref di origin, altrimenti lane e commit spariscono senza warning
+        src = self.init("src")
+        self.commit(src, "uno")
+        self.g(src, "checkout", "-q", "-b", "feature")
+        feat = self.commit(src, "feature")
+        self.g(src, "checkout", "-q", "main")
+        work = self.path("work")
+        gitgraph.git(self.tmp.name, "clone", "-q", src, work)
+        self.g(work, "remote", "add", "fork", src)
+        self.g(work, "fetch", "-q", "fork")
+
+        commits, _, _, tips, _ = gitgraph.read_graph(work, 300)
+        self.assertIn(("origin/feature", feat), tips)
+        self.assertIn(feat, commits)
+        self.assertEqual([r for r, _ in tips if r.startswith("fork")], [])
+        out = "\n".join(gitgraph.render(commits, {h: h[:7] for h in commits}, {}, tips,
+                                        head="main"))
+        self.assertIn("branch origin_feature", out)
+
+    def test_fork_con_sha_diverso_resta_fuori_dalla_finestra(self):
+        src = self.init("src")
+        self.commit(src, "uno")
+        work = self.path("work")
+        gitgraph.git(self.tmp.name, "clone", "-q", src, work)
+        fork = self.init("fork")
+        only = self.commit(fork, "solo fork")
+        self.g(work, "remote", "add", "fork", fork)
+        self.g(work, "fetch", "-q", "fork")
+
+        commits, _, _, tips, _ = gitgraph.read_graph(work, 300)
+        self.assertNotIn(only, commits)
+        self.assertEqual([r for r, _ in tips], ["main"])
+
+
 class ReadGraphParsingTest(unittest.TestCase):
     """P2-07: campi del log separati da SEP e ref senza unpacking fragile."""
 
     S = "\x1f"  # gitgraph.SEP: il formato del log e' un contratto, non un dettaglio interno
 
     def read(self, log, refs="tag v1 A1 A1\n"):
-        # ordine delle chiamate a git in read_graph(): worktree, log, tag, HEAD, heads, remotes
+        # ordine delle chiamate a git in read_graph(): worktree, heads, remotes, log, tag, HEAD
         with mock.patch.object(gitgraph, "git",
-                               side_effect=["true\n", log, refs, "main\n",
-                                            "refs/heads/main a1 \n", ""]):
+                               side_effect=["true\n", "refs/heads/main a1 \n", "", log,
+                                            refs, "main\n"]):
             return gitgraph.read_graph(".", 10)
 
     def test_subject_con_pipe_intatto(self):
@@ -508,8 +666,10 @@ class OutputPathTest(unittest.TestCase):
             with mock.patch.object(gitgraph.sys, "argv", argv), \
                     mock.patch.object(gitgraph, "read_graph",
                                       return_value=linear_fixture() + ({}, [], "")), \
-                    mock.patch.object(gitgraph, "render_png") as render_png:
-                gitgraph.main()  # nessun SystemExit
+                    mock.patch.object(gitgraph, "render_png") as render_png, \
+                    contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                gitgraph.main()  # nessun SystemExit, riga alt su stdout
         self.assertEqual(render_png.call_args[0][1], png)
 
     def test_write_atomic_contenuto_esatto_e_nessun_tmp(self):
@@ -551,6 +711,105 @@ class OutputPathTest(unittest.TestCase):
             with open(path, encoding="utf-8") as f:
                 self.assertEqual(f.read(), "vecchio\n")
             self.assertFalse(os.path.exists(path + ".tmp"))
+
+
+class InitDirectiveTest(unittest.TestCase):
+    """P2-13: palette alto contrasto, showCommitLabel e font sono nella direttiva init."""
+
+    def payload(self, line):
+        return json.loads(line[len("%%{init: "):-len("}%%")])
+
+    def test_palette_contrasto_e_show_commit_label(self):
+        payload = self.payload(gitgraph.init_directive("main"))
+        self.assertEqual(payload["theme"], gitgraph.THEME_DEFAULT)
+        self.assertEqual(payload["gitGraph"],
+                         {"mainBranchName": "main", "showCommitLabel": True})
+        self.assertEqual(payload["themeVariables"]["git0"], "#0b4f9c")
+        self.assertEqual(payload["themeVariables"]["fontSize"],
+                         f"{gitgraph.FONT_DEFAULT}px")
+
+    def test_tema_e_font_scelti_dall_utente(self):
+        payload = self.payload(gitgraph.init_directive("develop", theme="dark", font=22))
+        self.assertEqual(payload["theme"], "dark")
+        self.assertEqual(payload["themeVariables"]["fontSize"], "22px")
+
+    def test_render_propaga_tema_e_font(self):
+        commits, short = linear_fixture()
+        out = gitgraph.render(commits, short, {}, [], linear=True, head="main",
+                              theme="forest", font=20)
+        payload = self.payload(out[0])
+        self.assertEqual(payload["theme"], "forest")
+        self.assertEqual(payload["themeVariables"]["fontSize"], "20px")
+
+
+class PNGOutputTest(unittest.TestCase):
+    """P2-13: --png stampa la riga alt e propaga width, tema e font al render."""
+
+    def run_png(self, *args):
+        with tempfile.TemporaryDirectory() as d:
+            png = os.path.join(d, "grafo.png")
+            argv = ["gitgraph.py", ".", "--png", png, *args]
+            with mock.patch.object(gitgraph.sys, "argv", argv), \
+                    mock.patch.object(gitgraph, "read_graph",
+                                      return_value=linear_fixture() + ({}, [], "")), \
+                    mock.patch.object(gitgraph, "render_png") as render_png, \
+                    contextlib.redirect_stdout(io.StringIO()) as out, \
+                    contextlib.redirect_stderr(io.StringIO()):
+                gitgraph.main()
+        return out.getvalue(), render_png.call_args
+
+    def test_riga_alt_su_stdout(self):
+        out, call = self.run_png()
+        self.assertEqual(out, "![Storia git: 3 commit su 1 ramo](grafo.png)\n")
+        self.assertTrue(call[0][1].endswith("grafo.png"))  # render_png riceve il path
+
+    def test_leve_propagate_al_render(self):
+        _, call = self.run_png("--width", "800", "--theme", "dark", "--font", "20")
+        self.assertEqual(call[0][2], 800)  # width
+        self.assertEqual(call[0][3], "#1e1e1e")  # sfondo del tema dark
+
+    def test_width_o_font_non_positivi_sono_errori(self):
+        for flag in ("--width", "--font"):
+            argv = ["gitgraph.py", ".", "--png", "g.png", flag, "0"]
+            with mock.patch.object(gitgraph.sys, "argv", argv), \
+                    mock.patch.object(gitgraph, "read_graph") as read, \
+                    contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as cm:
+                    gitgraph.main()
+            self.assertEqual(cm.exception.code, 2)
+            read.assert_not_called()
+
+
+class SandboxGateTest(unittest.TestCase):
+    """P2-02: sandbox Chromium attiva di default; GITGRAPH_NO_SANDBOX=1 e' l'unico gate."""
+
+    def render(self, env_value):
+        captured = {}
+
+        def fake_run(argv, **kwargs):
+            with open(argv[argv.index("-p") + 1], encoding="utf-8") as f:
+                captured["config"] = json.load(f)
+            with open(argv[argv.index("-o") + 1], "w", encoding="utf-8") as f:
+                f.write("png")
+            return gitgraph.subprocess.CompletedProcess(argv, 0, "", "")
+
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.dict(os.environ, {gitgraph.NO_SANDBOX_ENV: env_value}), \
+                mock.patch.object(gitgraph.shutil, "which", return_value="/finto/mmdc"), \
+                mock.patch.object(gitgraph, "chrome_bin", return_value="/finto/chrome"), \
+                mock.patch.object(gitgraph.subprocess, "run", side_effect=fake_run):
+            gitgraph.render_png("gitGraph\n", os.path.join(d, "out.png"))
+        return captured["config"]
+
+    def test_sandbox_attiva_di_default(self):
+        for value in ("", "0", "true"):
+            with self.subTest(value=value):
+                self.assertEqual(self.render(value)["args"], [])
+
+    def test_flag_esplicito_disattiva_la_sandbox(self):
+        config = self.render("1")
+        self.assertEqual(config["args"], ["--no-sandbox", "--disable-setuid-sandbox"])
+        self.assertEqual(config["executablePath"], "/finto/chrome")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Storia git -> Mermaid gitGraph: rami, fork e merge ricostruiti.
 
-Destinazioni, esclusive: --png FILE (render locale con mmdc, niente stdout) oppure -o FILE (file,
+Destinazioni, esclusive: --png FILE (render locale con mmdc; stdout = riga alt) oppure -o FILE (file,
 avvolto nel fence ```mermaid con --md) oppure stdout (Mermaid puro, col fence con --md). --png
 non si combina con -o/--md: chiedere due destinazioni e' un errore (exit 2), non uno scarto
 silenzioso. --linear disattiva la ricostruzione: soli commit in ordine parents-first. Tutto
@@ -22,10 +22,26 @@ import sys
 import tempfile
 
 LABEL_LEN_DEFAULT = 32  # caratteri dell'etichetta, ellissi compresa
-PNG_SIZE = 1600  # larghezza del PNG renderizzato da mmdc
+PNG_SIZE = 1600  # larghezza del PNG renderizzato da mmdc (default di --width)
+THEME_DEFAULT = "neutral"  # tema Mermaid di default: lane piu' contrastate
+THEMES = ("default", "dark", "forest", "neutral")  # gli stessi nomi di mmdc -t
+FONT_DEFAULT = 16  # px del font del diagramma (themeVariables.fontSize)
 WINDOW_DEFAULT = 30  # -n di default: commit letti da git log (finestra di ricostruzione)
 MAIN_NAMES = ("main", "master")  # trunk noti: ordine dei tip e fallback quando HEAD non risolve
 SEP = "\x1f"  # separatore dei campi del log: '|' e' un carattere legittimo in un subject
+
+# Palette ad alto contrasto (>= 3:1 sullo sfondo bianco, WCAG 1.4.11): il colore resta
+# un segnale secondario (le etichette sono sempre visibili) ma resta leggibile anche con
+# deuteranopia/protanopia, dove la palette di default ha due lane quasi indistinguibili.
+THEME_VARS = {
+    "git0": "#0b4f9c", "git1": "#b34a00", "git2": "#1b6b3a", "git3": "#7a2ea8",
+    "git4": "#8a1c3b", "git5": "#005f6b", "git6": "#5a4b00", "git7": "#2f3b45",
+    "gitBranchLabel0": "#ffffff", "gitBranchLabel1": "#ffffff",
+    "gitBranchLabel2": "#ffffff", "gitBranchLabel3": "#ffffff",
+    "gitBranchLabel4": "#ffffff", "gitBranchLabel5": "#ffffff",
+    "gitBranchLabel6": "#ffffff", "gitBranchLabel7": "#ffffff",
+    "commitLabelColor": "#1a1a1a", "commitLabelBackground": "#f2f2f2",
+}
 
 # Warning su stderr = contratto macchina (SKILL.md, README): la frase resta invariata,
 # l'hint in coda dice cosa fare. Unica fonte: i test la verificano, non la riscrivono.
@@ -44,6 +60,12 @@ CHROME_PATTERNS = (
     "/usr/bin/chromium-browser",
     "/usr/bin/google-chrome",
 )
+
+# Sandbox Chromium: attiva di default. Il gate esplicito (unica variabile, contratto
+# utente) la disattiva solo dove il sandbox non parte (container/root senza user
+# namespace). Motivazione e diagnosi: references/png-setup.md §3.
+NO_SANDBOX_ENV = "GITGRAPH_NO_SANDBOX"
+NO_SANDBOX_ARGS = ("--no-sandbox", "--disable-setuid-sandbox")
 
 
 class GitError(RuntimeError):
@@ -104,20 +126,50 @@ def label(text, limit=LABEL_LEN_DEFAULT):
 
 
 def branch_tips(repo):
-    """(ref, commit) dei rami, senza duplicati: un ramo locale vince sul remoto omonimo."""
-    tips, seen = [], set()
+    """(ref, commit) dei rami, senza duplicati: un ramo locale vince sul remoto omonimo.
+
+    Dei remoti si tengono solo i ref di `origin` (se ne esistono): i rami degli altri
+    remoti (fork/upstream, possono essere centinaia) aprirebbero lane che non
+    appartengono alla storia del repo. La scelta e' per nome e il dedup per SHA
+    viene dopo, sul solo set scelto: prima si prendono i ref (locali + `origin`,
+    oppure tutti i remoti presenti se `origin` non c'e'), poi si deduplica quel set. Cosi' un ref di un altro
+    remoto non puo' scartare il ref di `origin` con lo stesso SHA, e in un clone
+    normale `origin/main` = `main` non fa scattare il ripiego "tutti i remoti".
+    Il ripiego scatta solo se sotto `refs/remotes/origin/` non esiste alcun ref
+    (nemmeno una `origin/HEAD` symref: il remote c'e' comunque). Il limite e'
+    dichiarato in SKILL.md; il costo del giro resta O(ref) in un solo
+    `for-each-ref` per namespace, non un processo per ramo.
+    """
+    local, origin, other = [], [], []
+    has_origin = False
     for ns in ("refs/heads/", "refs/remotes/"):
         raw = git(repo, "for-each-ref", "--sort=-committerdate",
                   "--format=%(refname) %(objectname) %(symref)", ns)
         for line in raw.splitlines():
             ref, _, rest = line.partition(" ")
             sha, _, symref = rest.partition(" ")
-            if not sha or symref.strip() or sha in seen:
+            if not sha:
                 continue
-            seen.add(sha)
-            tips.append((ref[len(ns):], sha))
+            name = ref[len(ns):]
+            remote = ns == "refs/remotes/"
+            if not remote:
+                bucket = local
+            elif name.startswith("origin/"):
+                has_origin = True  # prima del filtro symref: origin esiste anche da solo HEAD
+                bucket = origin
+            else:
+                bucket = other
+            if symref.strip():
+                continue  # un symref non e' un tip
+            bucket.append((name, sha))
+    # dedup per SHA sul solo set scelto: un ramo locale vince sul remoto omonimo
+    selected, seen = [], set()
+    for tip in local + (origin if has_origin else other):
+        if tip[1] not in seen:
+            seen.add(tip[1])
+            selected.append(tip)
     # il ramo principale rivendica per primo la sua catena first-parent
-    return sorted(tips, key=lambda t: t[0] not in MAIN_NAMES)
+    return sorted(selected, key=lambda t: t[0] not in MAIN_NAMES)
 
 
 def chrome_bin():
@@ -133,11 +185,26 @@ def chrome_bin():
     return None
 
 
-def render_png(mermaid, out):
+def init_directive(branch, theme=THEME_DEFAULT, font=FONT_DEFAULT):
+    """Direttiva %%{init}%% del grafo: ramo principale, tema, palette, font.
+
+    La palette (THEME_VARS) sovrascrive i colori del tema scelto: sono quelli che
+    garantiscono il contrasto delle lane. showCommitLabel tiene visibile sul ramo
+    l'etichetta del commit: il colore non e' l'unico segnale (WCAG 1.4.1).
+    """
+    return "%%{init: " + json.dumps({
+        "theme": theme,
+        "gitGraph": {"mainBranchName": branch, "showCommitLabel": True},
+        "themeVariables": dict(THEME_VARS, fontSize=f"{font}px"),
+    }) + "}%%"
+
+
+def render_png(mermaid, out, width=PNG_SIZE, background="white"):
     """Mermaid -> PNG via mmdc; esce con una riga se mmdc o Chromium mancano.
 
-    --no-sandbox nel puppeteer.json: il Chromium locale gira in container/CI dove il
-    sandbox non ha namespace utente; l'input e' l'.mmd scritto qui, non HTML esterno.
+    Sandbox Chromium attiva: il diagramma contiene subject e nomi ramo presi dal repo,
+    quindi in un repo di terzi e' input influenzabile dall'esterno; GITGRAPH_NO_SANDBOX=1
+    e' il ripiego esplicito per container/root senza user namespace (png-setup.md §3).
     """
     mmdc = shutil.which("mmdc")
     if not mmdc:
@@ -149,11 +216,11 @@ def render_png(mermaid, out):
         src, cfg = os.path.join(tmp, "in.mmd"), os.path.join(tmp, "puppeteer.json")
         with open(src, "w", encoding="utf-8") as f:
             f.write(mermaid)
+        args = list(NO_SANDBOX_ARGS) if os.environ.get(NO_SANDBOX_ENV) == "1" else []
         with open(cfg, "w", encoding="utf-8") as f:
-            json.dump({"executablePath": chrome,
-                       "args": ["--no-sandbox", "--disable-setuid-sandbox"]}, f)
+            json.dump({"executablePath": chrome, "args": args}, f)
         r = subprocess.run([mmdc, "-i", src, "-o", out, "-p", cfg,
-                            "--size", str(PNG_SIZE), "-b", "white", "-q"],
+                            "--size", str(width), "-b", background, "-q"],
                            capture_output=True, text=True)
         if r.returncode != 0 or not os.path.exists(out):
             sys.exit(f"mmdc fallito: {r.stderr.strip() or r.stdout.strip()}")
@@ -191,8 +258,13 @@ def read_graph(repo, n, linear=False):
     if not is_worktree(repo):
         raise GitError(f"{repo}: non e' un repository git")
 
+    # la finestra segue gli stessi ref delle lane (P2-03): --all includerebbe i commit
+    # raggiungibili solo da fork/upstream, che finirebbero appesi alla lane corrente.
+    # --tags tiene i commit raggiungibili solo da un tag (ref legittimi, non lane).
+    tips = branch_tips(repo)
+    revs = [sha for _, sha in tips] or ["--all"]
     # commit -> ([parents], subject), dal piu' recente al piu' vecchio
-    log = git(repo, "log", "--all", "--topo-order", f"-n{n}",
+    log = git(repo, "log", "--topo-order", f"-n{n}", *revs, "--tags",
               f"--pretty=format:%h{SEP}%H{SEP}%P{SEP}%s")
     short, commits = {}, {}
     # split("\n") e non splitlines(): git separa i commit con \n, mentre splitlines()
@@ -225,11 +297,12 @@ def read_graph(repo, n, linear=False):
     head = git(repo, "rev-parse", "--abbrev-ref", "HEAD", strict=False).strip()
     if linear:
         return commits, short, tags, [], head
-    return commits, short, tags, branch_tips(repo), head
+    return commits, short, tags, tips, head
 
 
 def render(commits, short, tags, tips, linear=False, label_len=LABEL_LEN_DEFAULT,
-           head="", warn=None, window=WINDOW_DEFAULT) -> list[str]:
+           head="", warn=None, window=WINDOW_DEFAULT, theme=THEME_DEFAULT,
+           font=FONT_DEFAULT) -> list[str]:
     """commits/short/tags/tips gia' letti da git -> righe Mermaid (nessun I/O).
 
     Linear: una fila parents-first. Altrimenti Graph ricostruisce le lane nello stesso
@@ -238,7 +311,7 @@ def render(commits, short, tags, tips, linear=False, label_len=LABEL_LEN_DEFAULT
     # il trunk e' quello di HEAD: "main" resta solo il fallback dichiarato (HEAD non risolve,
     # oppure e' il literal "HEAD" di un checkout detached)
     trunk = head if head not in ("", "HEAD") else MAIN_NAMES[0]
-    g = Graph(commits, short, tags, label_len, warn, trunk, window)
+    g = Graph(commits, short, tags, label_len, warn, trunk, window, theme=theme, font=font)
     if linear:
         # ordine parents-first, senza rami: il nome serve solo all'etichetta del ramo
         g.header(slug(trunk))
@@ -258,9 +331,11 @@ class Graph:
     """Ricostruzione delle lane: ogni struttura mutata e' un campo, non una cattura di closure."""
 
     def __init__(self, commits, short, tags, label_len=LABEL_LEN_DEFAULT, warn=None,
-                 trunk=MAIN_NAMES[0], window=WINDOW_DEFAULT):
+                 trunk=MAIN_NAMES[0], window=WINDOW_DEFAULT, theme=THEME_DEFAULT,
+                 font=FONT_DEFAULT):
         self.commits, self.short, self.tags = commits, short, tags
         self.label_len = label_len
+        self.theme, self.font = theme, font  # solo per la direttiva init
         self.trunk = trunk  # ramo di ripiego quando nessun tip rivendica la radice
         self.window = window  # solo per l'hint: -n raddoppiato nei warning
         self.say = warn or (lambda _msg: None)
@@ -273,7 +348,10 @@ class Graph:
                 if p in commits:
                     self.children.setdefault(p, []).append(h)
         self.heads, self.finished, self.deferred = {}, set(), set()
-        self.state = {"cur": None, "made": set()}
+        # stato della lane corrente dichiarato una volta: current = nome Mermaid attivo,
+        # made = lane gia' emesse. Nessuna cella mutabile: li aggiorna solo switch().
+        self.current = None
+        self.made = set()
         self.start = self.start_branch = ""
 
     def emit(self, line):
@@ -290,8 +368,7 @@ class Graph:
         self.emit(f'commit id: "{self.short[h]}" tag: "{self.tag_of(h, self.commits[h][1])}"')
 
     def header(self, branch_name):
-        self.out.append('%%{init: {"gitGraph": {"mainBranchName": "'
-                        + branch_name + '"}}}%%')
+        self.out.append(init_directive(branch_name, self.theme, self.font))
         self.out.append("gitGraph")
 
     def uname(self, branch):
@@ -337,18 +414,19 @@ class Graph:
         self.start_branch = self.owner.get(self.start, self.trunk)
         # stato in un solo dominio (nomi Mermaid): lane corrente + lane gia' emesse
         first = self.uname(self.start_branch)
-        self.state = {"cur": first, "made": {first}}
+        self.current, self.made = first, {first}
 
     def switch(self, branch):
+        """Unico posto che decide `branch` vs `checkout`: nessuna lane emessa due volte."""
         n = self.uname(branch)
-        if self.state["cur"] == n:
+        if n == self.current:
             return
-        if n in self.state["made"]:
+        if n in self.made:
             self.emit(f"checkout {n}")
         else:
             self.emit(f"branch {n}")
-            self.state["made"].add(n)
-        self.state["cur"] = n
+            self.made.add(n)
+        self.current = n
 
     def emit_commit(self, h, branch):
         par = self.parents_of(h)
@@ -428,9 +506,19 @@ class Graph:
                     self.commit_line(h)
         if self.deferred:
             self.say(WARN_DEFERRED.format(n=len(self.deferred), window=self.window * 2))
-        # un checkout finale non disegna nulla
+        # un `checkout` in coda non disegna nulla: switch() lo emette subito, ma l'ultimo
+        # puo' essere solo il ritorno alla lane di partenza senza commit a seguire. Resta
+        # una pulizia mirata a questo solo prefisso: se un domani un comando Mermaid in coda
+        # sporcasse il grafo, va gestito in switch(), non aggiungendo altri `startswith` qui.
         while self.out and self.out[-1].strip().startswith("checkout "):
             self.out.pop()
+
+
+def alt_text(out):
+    """Testo alternativo del PNG (WCAG 1.1.1): commit disegnati e lane del grafo."""
+    n = sum(1 for line in out if ' id: "' in line)  # commit e merge: le righe disegnate
+    lanes = 1 + sum(1 for line in out if line.strip().startswith("branch "))
+    return f"Storia git: {n} commit su {lanes} ram{'o' if lanes == 1 else 'i'}"
 
 
 def main():
@@ -453,9 +541,19 @@ def main():
     ap.add_argument("--label-len", type=int, default=LABEL_LEN_DEFAULT,
                     help="caratteri massimi per etichetta, troncata a confine di parola "
                          "(default 32, 0 = soggetto intero)")
+    ap.add_argument("--width", type=int, default=PNG_SIZE,
+                    help="larghezza del PNG in px (default 1600)")
+    ap.add_argument("--theme", default=THEME_DEFAULT, choices=THEMES,
+                    help="tema Mermaid del diagramma (default neutral: contrasto piu' alto)")
+    ap.add_argument("--font", type=int, default=FONT_DEFAULT,
+                    help="font del diagramma in px (default 16)")
     a = ap.parse_args()
     if a.n < 1:
         ap.error("serve -n >= 1")
+    if a.width < 1:
+        ap.error("serve --width >= 1")
+    if a.font < 1:
+        ap.error("serve --font >= 1")
     if a.png and (a.o or a.md):
         # due destinazioni sono un errore: -o/--md non vanno piu' scartati in silenzio
         ap.error("--png non combinabile con -o/--md: scegli una destinazione")
@@ -468,13 +566,17 @@ def main():
         commits, short, tags, tips, head = read_graph(a.repo, a.n, a.linear)
         out = render(commits, short, tags, tips, linear=a.linear,
                      label_len=a.label_len, head=head, window=a.n,
+                     theme=a.theme, font=a.font,
                      warn=lambda msg: sys.stderr.write(msg))
     except GitError as e:
         sys.exit(str(e))
 
     text = "\n".join(out) + "\n"
     if a.png:
-        render_png(text, a.png)
+        background = "#1e1e1e" if a.theme == "dark" else "white"
+        render_png(text, a.png, a.width, background)
+        # riga pronta da incollare nel documento che ospita l'immagine (WCAG 1.1.1)
+        print(f"![{alt_text(out)}]({os.path.basename(a.png)})")
         print(f"png -> {a.png}", file=sys.stderr)
         return
     if a.md:

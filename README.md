@@ -8,7 +8,9 @@ rendering PNG locale.
 
 *Esempio generato con `mmdc 12.0.0` (§Install) e il Chromium risolto da `chrome_bin()` su un repo di
 prova con due rami e due merge, `--label-len 12` per un grafo stretto; la versione del browser non è
-registrata nell'asset. I merge portano l'id del commit di merge, i tag git compaiono come `tag:` (se
+registrata nell'asset. Le lane usano la palette ad alto contrasto del tema `neutral` (default): il
+colore non è l'unico segnale, ogni commit porta la sua etichetta. I merge portano l'id del commit di
+merge, i tag git compaiono come `tag:` (se
 il commit ne ha più di uno: il primo più `+N`), i subject sono troncati a `--label-len` caratteri
 (default 32, **ellissi `…` compresa**) a confine di parola, con taglio duro se il confine
 lascerebbe meno di metà del testo. Ricetta:
@@ -90,6 +92,9 @@ lo dice su `stderr` proseguendo col render: è un avviso, non un fallimento.
 
 Chromium: la skill riusa quello che trova (browser-tools di pi, cache puppeteer/playwright,
 chromium di sistema) oppure quello indicato da `PUPPETEER_EXECUTABLE_PATH`.
+Il render gira con la **sandbox attiva**; se l'ambiente non la permette (container/root senza user
+namespace) il ripiego esplicito è `GITGRAPH_NO_SANDBOX=1` (motivazione e verifica:
+[`skills/gitgraph/references/png-setup.md`](skills/gitgraph/references/png-setup.md) §3).
 Dettagli e diagnosi: [`skills/gitgraph/references/png-setup.md`](skills/gitgraph/references/png-setup.md).
 
 ## Verify
@@ -114,7 +119,13 @@ un commit, un repo vuoto e un clone shallow) e verifica
 - un repo a un solo commit produce un grafo con un commit; un repo vuoto esce con 1 e `nessun commit trovato`; un clone `--depth 1` produce un grafo valido;
 - escaping e parsing: `"`, `\`, `#`, backtick e caratteri di controllo nel subject o nel tag restano renderizzabili; un subject con `|` non rompe il log; un tag in formato inatteso esce con `tag non interpretabile`;
 - collisione di nomi sanificati (`feature/x` + `feature_x`): due lane distinte, warning su stderr;
-- `--png` produce un file non vuoto (se `mmdc` è installato, altrimenti `SKIP`); una `mmdc --version` diversa da `12.0.0` produce un `WARN` su stderr, non un fallimento.
+- ref remoti: un ramo di `origin` apre la sua lane, un ref di `upstream`/fork no e i suoi commit
+  restano fuori dal grafo anche quando `origin/main` ha lo stesso SHA di `main` (filtro P2-03);
+  un commit raggiungibile solo da un tag resta invece nel grafo;
+- `--png` produce un file non vuoto (se `mmdc` è installato, altrimenti `SKIP`); una `mmdc --version` diversa da `12.0.0` produce un `WARN` su stderr, non un fallimento;
+- `--png` stampa su stdout la sola riga `![Storia git: N commit su M rami](file.png)`; `--width 800` è rispettata (larghezza letta dall'IHDR del PNG);
+- `--theme` e `--font` compaiono nella direttiva `%%{init}%%` (`"theme": "dark"`, `"fontSize": "20px"`) e `--width 0` esce con 2 e `serve --width >= 1`;
+- sandbox Chromium: il render di default gira con la sandbox attiva e `GITGRAPH_NO_SANDBOX=1` produce comunque il PNG (il gate disattiva la sandbox, non il render).
 
 Lo script gira con `set -euo pipefail`: un comando che fallisce ferma il test (nessun falso verde) e
 `git init -b` ha un fallback senza `-b` per git < 2.28.
@@ -133,7 +144,10 @@ grafo giusto».
 
 [`.github/workflows/ci.yml`](.github/workflows/ci.yml) gira su push di `main`, sui tag `v*` e sulle
 pull request: `selftest.sh` + `py_compile` su Python 3.8 e 3.12, un job `png` (mmdc 12.0.0 + Chromium,
-dove lo `SKIP` non è ammesso), e `gitleaks` su tutta la storia. Lo stesso gate in locale, senza runner:
+dove lo `SKIP` non è ammesso) e `gitleaks` su tutta la storia. Il job `png` imposta
+`GITGRAPH_NO_SANDBOX=1`: il runner ubuntu-latest limita lo user namespace di Chromium, quindi lì il
+gate esplicito è la configurazione corretta (il render sandboxato è quello locale). Lo stesso gate
+in locale, senza runner:
 
 ```bash
 bash skills/gitgraph/tests/selftest.sh          # locale: --png può finire in SKIP se manca mmdc
@@ -156,11 +170,16 @@ python3 skills/gitgraph/scripts/gitgraph.py ~/un/repo -n 15 --png /tmp/grafo.png
 | `-n N` | finestra di ricostruzione in commit, default 30 (vedi §`-n`: finestra di ricostruzione) |
 | `-o FILE` | scrive su file invece che su stdout |
 | `--md` | avvolge l'output nel fence ```` ```mermaid ```` |
-| `--png FILE` | renderizza il PNG con `mmdc` (largo 1600 px, sfondo bianco); niente stdout; incompatibile con `-o`/`--md` (exit 2), vedi §Output possibili |
+| `--png FILE` | renderizza il PNG con `mmdc` (larghezza 1600 px, sfondo bianco o scuro con `--theme dark`); stdout = sola riga `![alt](FILE)` pronta da incollare; incompatibile con `-o`/`--md` (exit 2), vedi §Output possibili |
+| `--width N` | larghezza del PNG in px (default 1600): alzala per un grafo largo invece di togliere commit con `-n` |
+| `--theme NOME` | tema Mermaid: `neutral` (default, contrasto più alto), `default`, `dark`, `forest`; con `dark` anche lo sfondo del PNG è scuro |
+| `--font N` | font del diagramma in px (default 16): alzalo se il grafo si rimpicciolisce fino a testo illeggibile |
 | `--linear` | fila indiana, un solo ramo: ripiego se la ricostruzione esce sbagliata |
 | `--label-len N` | caratteri massimi del testo dell'etichetta, troncato a confine di parola con `…` (default 32, ellissi compresa, `0` = soggetto intero); con più tag `+N` è accodato a parte; l'escaping può allungare la stringa (es. `#` → `#35;`) |
 
-`stdout` è Mermaid puro; i warning vanno su `stderr`. La frase dei due warning è contratto con
+`stdout` è Mermaid puro; con `--png` contiene la sola riga `![alt](file.png)` da incollare nel
+documento che ospita l'immagine (testo equivalente del diagramma, non ometterla); i warning vanno su
+`stderr`. La frase dei due warning è contratto con
 l'agente (la skill reagisce a quelle stringhe) e resta invariata: dopo, tra parentesi, arriva l'hint
 operativo con il `-n` suggerito (`-n 60` con il default 30). Con `-o` il messaggio di successo su
 `stderr` è `N commit -> /path/assoluto`: conta i soli `commit id:`, non le direttive Mermaid.
@@ -169,7 +188,8 @@ operativo con il `-n` suggerito (`-n 60` con il default 30). Con `-o` il messagg
 per commit) e non la espone in configurazione: oltre ~8 caratteri le etichette di commit adiacenti
 nella stessa lane possono sovrapporsi e restare tagliate. Non è aggirabile dallo script né dal PNG
 già renderizzato (il PNG è un artefatto del renderer, non un file modificabile). Per un grafo
-leggibile resta `--label-len` contenuto (10-12) e/o `-n` ridotto, accettando subject abbreviati.
+leggibile resta `--label-len` contenuto (10-12) e/o `-n` ridotto, accettando subject abbreviati;
+sul PNG `--width` e `--font` danno più spazio e testo più grande senza togliere commit.
 
 Un merge si ricostruisce solo con **entrambi i genitori** nella finestra di commit: se `stderr`
 segnala `commit fuori dalle catene principali` o `merge non ricostruiti`, rilancia con `-n` più alto.
@@ -177,13 +197,16 @@ segnala `commit fuori dalle catene principali` o `merge non ricostruiti`, rilanc
 ## `-n`: finestra di ricostruzione
 
 `-n` (default 30) non è un "numero massimo di commit": è la **finestra di ricostruzione**. È il
-numero di commit che `git log --all --topo-order` restituisce, e la ricostruzione delle lane lavora
+numero di commit che `git log --topo-order` restituisce sui soli rami tenuti (locali + `origin`,
+più i tag, vedi §Limiti noti), e la ricostruzione delle lane lavora
 solo su quelli; la catena first-parent di ogni tip viene percorsa **dentro** la finestra. Per questo
 alzare `-n` "aggiusta" il grafo: fa rientrare i genitori di un merge, che senza entrambi non è
 ricostruibile (e il commit finisce in una lane laterale o in un warning). Il costo cresce con i
-rami: più tip = più catene da percorrere e due `git for-each-ref` su tutti i ref, quindi su un repo
-con molti rami/ref remoti conviene partire bassi e alzare solo se `stderr` segnala merge non
-ricostruiti. `-n < 1` è rifiutato (exit 2): non esiste una finestra vuota.
+rami: più tip = più catene da percorrere e due `git for-each-ref` su tutti i ref (due processi,
+non uno per ramo), quindi su un repo con molti rami conviene partire bassi e alzare solo se
+`stderr` segnala merge non ricostruiti. Dei remoti solo `origin` apre lane (vedi §Limiti noti):
+216 ref misurati su un repo di prova costano ~0,06 s contro ~0,05 s con 4 ref. `-n < 1` è
+rifiutato (exit 2): non esiste una finestra vuota.
 
 ## Limiti noti
 
@@ -194,6 +217,13 @@ Comportamenti verificabili che non si aggirano dai flag:
   disegnare. Workaround: clonare il repo (`git clone <path>`) e passare il clone.
 - **Directory di output non create**: `-o` e `--png` richiedono che la directory esista già
   (`directory inesistente`, exit 1): lo script non crea cartelle. Workaround: `mkdir -p` prima.
+- **Rami remoti non-`origin`**: solo i ref di `origin` producono lane; i fork/upstream restano fuori
+  dal grafo (senza alcun ref `origin` si usano i remoti presenti). La scelta è per nome e il dedup
+  per SHA vale solo sul set scelto, quindi `origin/main` = `main` non fa scattare il ripiego e un
+  fork con lo stesso SHA non scarta il ref di `origin`. Non c'è un
+  flag per cambiarlo: se serve quella vista, rinomina il remoto in `origin`.
+- **Commit solo da tag**: i tag sono ref legittimi e restano nella finestra (`git log --tags`): un
+  commit raggiungibile solo da un tag compare nel grafo, con il tag come etichetta.
 - **Una destinazione per invocazione**: `--png` è incompatibile con `-o`/`--md` (exit 2); per avere
   sia il PNG sia il `.md` esegui lo script due volte.
 
@@ -214,6 +244,7 @@ Casi **risolti** — comportamento definitivo, non più limiti:
 | `mmdc non trovato` | `mmdc` non nel `PATH` | vedi §Install: symlink in `~/bin` o `PATH` che include `~/.local/bin` |
 | `chromium non trovato` | nessun Chromium nei percorsi noti | `export PUPPETEER_EXECUTABLE_PATH=/path/al/chrome` |
 | `mmdc fallito: ...` | Chromium incompatibile o `--size` assente (major vecchia) | verifica `mmdc --version` e `mmdc --help` |
+| `mmdc fallito: ...` con errore di sandbox | container/root senza user namespace | `GITGRAPH_NO_SANDBOX=1` (ripiego esplicito, vedi `png-setup.md` §3) |
 | `non e' un repository git` | path sbagliato, non un repo, un bare repo o una sottodirectory senza worktree | passa la radice del repo (con `.git`): un bare repo non ha una storia da disegnare |
 | Grafo "a fila indiana" | finestra `-n` troppo piccola, merge fuori | `-n` più alto, o `--linear` se vuoi davvero la fila |
 | Etichette che si sovrappongono / si tagliano nel PNG | spaziatura fissa di Mermaid gitGraph (~40 unità per commit), non configurabile | `--label-len` contenuto (10-12) o `-n` ridotto; il PNG già renderizzato non è modificabile dallo script |

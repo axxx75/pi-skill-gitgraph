@@ -39,8 +39,50 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   ripetuto in README. Nuovo `.gitattributes`
   (`skills/gitgraph/assets/example.png binary`) e README che dichiara l'esempio un'**illustrazione,
   non un golden file**, con la ricetta esatta (mmdc 12.0.0 e Chromium non registrato).
+- P2-02: Chromium gira **con la sandbox attiva**; `--no-sandbox --disable-setuid-sandbox` passano
+  solo con `GITGRAPH_NO_SANDBOX=1` (unico nome, nessun alias), il ripiego per container/root senza
+  user namespace. Motivazione e verifica in `references/png-setup.md` §3; il nome della variabile è
+  contratto utente: non si cambia senza una release.
+- P2-13: il diagramma esce con **palette ad alto contrasto** (`themeVariables`: lane ≥ 3:1 sullo
+  sfondo, etichette bianche) e `showCommitLabel: true`, tema di default `neutral`; tre leve
+  esplicite `--width N`, `--theme NOME`, `--font N` al posto di larghezza 1600, tema e font cablati.
+  Con `--png` lo stdout è la riga `![Storia git: N commit su M rami](file.png)` da incollare nel
+  documento (prima era vuoto): il passo di consegna di `SKILL.md` la richiede.
+- P2-08: lo stato della lane è esplicito (`self.current` + `self.made`) invece di un dict-cella
+  ereditato dal refactor da closure; `switch()` è l'unico posto che decide `branch` vs `checkout`.
+  L'output resta byte-identico (verificato con `diff` su tre repo e tre finestre); la pulizia del
+  `checkout` in coda resta un caso mirato, con il commento che dice dove andrebbe gestita una
+  nuova direttiva Mermaid.
+- P2-03: dei ref remoti si tengono solo quelli di `origin` (se esistono; senza alcun ref di
+  `origin` si usano i remoti presenti): i fork/upstream non aprono più lane e i loro commit non
+  entrano nella finestra
+  (che ora è `git log` sui soli ref tenuti più i tag, non `--all`), quindi non finiscono appesi alla
+  lane corrente. La scelta è per nome e il dedup per SHA vale **solo sul set scelto** (locali +
+  `origin`, oppure tutti i remoti presenti se `origin` non c'è), dopo la scelta: una lista `origin`
+  svuotata dal dedup (clone con `origin/main` = `main`) non fa scattare il ripiego sui remoti e un
+  ref di fork con lo **stesso** SHA non può scartare quello di `origin` (con `origin` esistente il
+  tip spariva da `revs`, quindi lane e commit senza alcun warning). Una `origin` ridotta alla sola
+  symref `HEAD` conta come esistente: il ripiego non scatta. Misura su 216
+  ref (6 locali, 10 origin, 200 upstream, SHA distinti, lane contate dopo il dedup): 215 → 15 lane a
+  `-n 300`, ~0,06 s contro ~0,05 s su un repo a 4 ref (il vecchio costo `N rev-list` non esiste più
+  dal refactor P0-04). Nella forma del fork-clone (202 ref: `main` locale, `origin/main` = `main`,
+  200 upstream) la stessa finestra dà 1 lane e 0 lane upstream. Nessun `rev-list
+  --stdin`: non serve. Limite e numeri dichiarati in `SKILL.md` (Limiti) e README.
 
 ### Note
+
+- **Cambio di output dichiarato (P2-13).** Il PNG di default cambia aspetto: palette ad alto
+  contrasto e tema `neutral` al posto della palette Mermaid di default su lane giallo/lime (sotto
+  3:1), quindi `assets/example.png` è stato rigenerato con la stessa ricetta. Cambia anche lo stdout
+  di `--png`, da vuoto alla riga alt: chi parsa lo stdout di `--png` trova quella riga, il path resta
+  su `stderr` (`png -> …`). La palette sovrascrive i colori delle lane anche scegliendo `--theme`:
+  il tema cambia sfondo e testi, non le tinte delle lane (sono quelle che garantiscono il contrasto).
+- **Sandbox attiva di default (P2-02).** Cambia il render solo in un punto: senza
+  `GITGRAPH_NO_SANDBOX=1` il `puppeteer.json` non contiene più `--no-sandbox
+  --disable-setuid-sandbox`. Verificato in questo ambiente (WSL2, utente non root): il render
+  funziona con la sandbox attiva e i processi `--type=renderer` girano in un user namespace
+  separato; con la variabile impostata il render passa dai flag espliciti. L'asset non cambia
+  (stessi pixel: il flag non tocca il layout).
 
 - **Doc, non codice (P2-14).** Nessuna modifica di comportamento: la precedenza dei flag del
   README/SKILL è già stata riscritta in P2-04 (rifiuto di `--png` con `-o`/`--md`), qui si
