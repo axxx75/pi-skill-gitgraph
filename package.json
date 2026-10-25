@@ -20,6 +20,8 @@
   "files": [
     "skills/",
     "README.md",
+    "RELEASE_NOTE.md",
+    "docs/adr/",
     "LICENSE"
   ],
   "pi": {

@@ -8,7 +8,7 @@
 I testi che finiscono nel diagramma vengono da git (subject dei commit, nomi dei tag): sono input
 influenzabile dall'esterno. `"`, `\`, `#`, backtick e caratteri di controllo rompevano il parser di
 Mermaid con un errore che non nominava il commit, quindi il grafo diventava illeggibile su repo
-reali (finding di robustezza, `#TASK-P2-01`).
+reali (finding di robustezza, `#TASK-P2-01`, commit `8867717`, non rilasciato: 1.1.0 in preparazione).
 
 ## Decisione
 

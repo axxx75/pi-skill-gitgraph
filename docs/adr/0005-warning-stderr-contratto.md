@@ -8,7 +8,7 @@
 La skill reagisce ai due warning su stderr (`commit fuori dalle catene principali`, `merge non
 ricostruiti`) per decidere se rilanciare con `-n` più alto: sono l'unico segnale di grafo
 incompleto. Le frasi erano costruite a mano in più punti e potevano cambiare senza che nessuno se ne
-accorgesse, rompendo la skill in silenzio (`#TASK-P2-06`).
+accorgesse, rompendo la skill in silenzio (`#TASK-P2-06`, commit `f824f7f`, non rilasciato: 1.1.0 in preparazione).
 
 ## Decisione
 

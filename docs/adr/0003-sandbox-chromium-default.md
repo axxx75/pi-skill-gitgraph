@@ -8,7 +8,7 @@
 Il PNG passa da `mmdc`, che usa Chromium. Il diagramma contiene subject e nomi di ramo presi dal
 repo: su un repo di terzi è input influenzabile dall'esterno. Il render girava con `--no-sandbox
 --disable-setuid-sandbox` sempre, per comodità (container/root senza user namespace), cioè
-disattivava la sandbox anche dove funzionava (`#TASK-P2-02`).
+disattivava la sandbox anche dove funzionava (`#TASK-P2-02`, commit `2a53330`, non rilasciato: 1.1.0 in preparazione).
 
 ## Decisione
 

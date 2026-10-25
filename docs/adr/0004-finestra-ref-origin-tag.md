@@ -8,7 +8,7 @@
 La finestra `-n` leggeva `git log --all`: entravano i commit raggiungibili solo dai ref di
 fork/upstream, che non hanno una lane propria e finivano appesi alla lane corrente. Su un repo con
 molti remoti (200 ref upstream) le lane esplodevano e il grafo diventava inutilizzabile, senza che
-`-n` aiutasse (`#TASK-P2-03`).
+`-n` aiutasse (`#TASK-P2-03`, commit `8b9b31d`, non rilasciato: 1.1.0 in preparazione).
 
 ## Decisione
 

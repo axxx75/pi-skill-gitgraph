@@ -31,5 +31,7 @@ re=$(printf '%s' "$version" | sed 's/[.[\*^$]/\\&/g')
 grep -qE "^## $re([[:space:]]|$)" "$root/RELEASE_NOTE.md" \
   || { echo "FAIL: RELEASE_NOTE.md senza la voce '## $version'" >&2; fail=1; }
 
-[ "$fail" -eq 0 ] && echo "OK: $version = $tag, voce in RELEASE_NOTE.md"
+if [ "$fail" -eq 0 ]; then
+  echo "OK: $version = $tag, voce in RELEASE_NOTE.md"
+fi
 exit "$fail"

@@ -80,8 +80,8 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   sandbox Chromium attiva con gate `GITGRAPH_NO_SANDBOX=1` (`#TASK-P2-02`), finestra = rami locali +
   `origin` + tag (`#TASK-P2-03`), warning su stderr come contratto macchina (`#TASK-P2-06`); formato
   minimo stato/data/contesto/decisione/conseguenze, nessun template vuoto. `RELEASE_NOTE.md` resta
-  il registro unico delle versioni e recupera la voce mancante **1.0.1** (esempio grafico, ricavata
-  dai commit); README chiude con il rimando a `docs/adr/` e a `RELEASE_NOTE.md`.
+  il registro unico delle versioni e recupera la voce **1.0.1** con la sola cosa che la storia
+  documenta (l'asset grafico); README chiude con il rimando a `docs/adr/` e a `RELEASE_NOTE.md`.
 
 ### Note
 
@@ -123,17 +123,19 @@ Le versioni precedenti sono ricostruibili dalla storia git.
 
 ## 1.0.2 — 2026-10-25
 
-- Fix `--linear`: nessun header Mermaid quando il grafo è lineare.
-- Fix `HEAD` unborn/dangling: `git()` non termina più con exit 1 (`strict=False` + fallback), caso coperto nel selftest.
+- Fix `--linear`: nessun header Mermaid quando il grafo è lineare (`e2e9bcb`).
+- Fix `HEAD` unborn/dangling: `git()` non termina più con exit 1 (`strict=False` + fallback), caso
+  coperto nel selftest (`9898bbe`).
+- README §Install: senza ref `pi update` segue `main` (sempre ultima versione online); un ref
+  pinnato (tag o commit) **non si sposta più** — non usare `@v1.0.1` (`5fcae92`).
 
 ## 1.0.1 — 2026-10-24
 
-- Esempio grafico nel README (`skills/gitgraph/assets/example.png`): due rami, due merge e i tag
-  `v1.0.0`/`release-1.0`, generato con `mmdc 12.0.0`; l'asset è un'illustrazione, non un golden
-  file.
-- README §Install: un ref pinnato (`git:…@v1.0.1`) non si sposta più con `pi update`; senza ref si
-  segue `main`.
+- Solo l'esempio grafico: `skills/gitgraph/assets/example.png` aggiunto al README (PNG generato da
+  `--png` su un repo con tre rami e due merge, tag `v1.0.0`/`v1.1.0`), con il bump di `package.json`
+  a 1.0.1 (`be0bedc`). `git log v1.0.0..v1.0.1` non contiene altro.
 
-## 1.0.0
+## 1.0.0 — 2026-10-24
 
-- Release iniziale.
+- Release iniziale: pacchetto pi (skill + manifest + README + MIT), tag annotato `v1.0.0`
+  (`3112891`).

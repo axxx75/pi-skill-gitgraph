@@ -8,7 +8,7 @@
 Il log di git era letto con un separatore visibile (`|`) e con `split()` posizionale. Un subject
 che conteneva `|` spostava i campi (commit fuori posto o eccezione), un separatore di riga Unicode
 (U+2028 e simili) spezzava un commit in due perché `splitlines()` divide anche lì, e una riga
-malformata faceva esplodere l'unpacking (`#TASK-P2-07`).
+malformata faceva esplodere l'unpacking (`#TASK-P2-07`, commit `a966289`, non rilasciato: 1.1.0 in preparazione).
 
 ## Decisione
 
