@@ -54,10 +54,12 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   `checkout` in coda resta un caso mirato, con il commento che dice dove andrebbe gestita una
   nuova direttiva Mermaid.
 - P2-03: dei ref remoti si tengono solo quelli di `origin` (se esistono; senza `origin` si usano i
-  remoti presenti): i fork/upstream non aprono più lane. Misura su 216 ref (6 locali, 10 origin,
-  200 upstream): 215 → 15 lane e 647 → 248 righe a `-n 300`, tempo invariato (~0,06 s contro ~0,05 s
-  su un repo a 4 ref: il vecchio costo `N rev-list` non esiste più dal refactor P0-04). Nessun
-  `rev-list --stdin`: non serve. Limite e numeri dichiarati in `SKILL.md` (Limiti) e README.
+  remoti presenti): i fork/upstream non aprono più lane e i loro commit non entrano nella finestra
+  (che ora è `git log` sui soli ref tenuti, non `--all`), quindi non finiscono appesi alla lane
+  corrente. Misura su 216 ref (6 locali, 10 origin, 200 upstream): 215 → 15 lane a `-n 300`, tempo
+  invariato (~0,06 s contro ~0,05 s su un repo a 4 ref: il vecchio costo `N rev-list` non esiste più
+  dal refactor P0-04). Nessun `rev-list --stdin`: non serve. Limite e numeri dichiarati in
+  `SKILL.md` (Limiti) e README.
 
 ### Note
 

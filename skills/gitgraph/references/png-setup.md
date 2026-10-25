@@ -50,7 +50,10 @@ GITGRAPH_NO_SANDBOX=1 python3 scripts/gitgraph.py <repo> --png grafo.png
 
 `GITGRAPH_NO_SANDBOX=1` è l'unico nome (nessun alias) ed è **contratto utente**: passare a
 Chromium `--no-sandbox --disable-setuid-sandbox`. Qualunque altro valore (compreso vuoto)
-lascia la sandbox attiva.
+lascia la sandbox attiva. Resta un bypass **esterno** a questo gate: se nell'ambiente c'è
+`PUPPETEER_DANGEROUS_NO_SANDBOX=true`, puppeteer aggiunge `--no-sandbox` da sé. In diagnosi,
+quando «la sandbox risulta attiva» ma non lo è, controlla anche
+`echo ${PUPPETEER_DANGEROUS_NO_SANDBOX:-unset}`.
 
 Perché: il diagramma contiene testo preso dal repository (subject dei commit, nomi di rami e
 tag), quindi in un repo clonato da terzi o in una PR da fork è contenuto influenzabile

@@ -119,7 +119,8 @@ un commit, un repo vuoto e un clone shallow) e verifica
 - un repo a un solo commit produce un grafo con un commit; un repo vuoto esce con 1 e `nessun commit trovato`; un clone `--depth 1` produce un grafo valido;
 - escaping e parsing: `"`, `\`, `#`, backtick e caratteri di controllo nel subject o nel tag restano renderizzabili; un subject con `|` non rompe il log; un tag in formato inatteso esce con `tag non interpretabile`;
 - collisione di nomi sanificati (`feature/x` + `feature_x`): due lane distinte, warning su stderr;
-- ref remoti: un ramo di `origin` apre la sua lane, un ref di `upstream`/fork no (filtro P2-03);
+- ref remoti: un ramo di `origin` apre la sua lane, un ref di `upstream`/fork no e i suoi commit
+  restano fuori dal grafo (filtro P2-03);
 - `--png` produce un file non vuoto (se `mmdc` è installato, altrimenti `SKIP`); una `mmdc --version` diversa da `12.0.0` produce un `WARN` su stderr, non un fallimento;
 - `--png` stampa su stdout la sola riga `![Storia git: N commit su M rami](file.png)`; `--width 800` è rispettata (larghezza letta dall'IHDR del PNG);
 - `--theme` e `--font` compaiono nella direttiva `%%{init}%%` (`"theme": "dark"`, `"fontSize": "20px"`) e `--width 0` esce con 2 e `serve --width >= 1`;
@@ -195,7 +196,8 @@ segnala `commit fuori dalle catene principali` o `merge non ricostruiti`, rilanc
 ## `-n`: finestra di ricostruzione
 
 `-n` (default 30) non è un "numero massimo di commit": è la **finestra di ricostruzione**. È il
-numero di commit che `git log --all --topo-order` restituisce, e la ricostruzione delle lane lavora
+numero di commit che `git log --topo-order` restituisce sui soli rami tenuti (locali + `origin`,
+vedi §Limiti noti), e la ricostruzione delle lane lavora
 solo su quelli; la catena first-parent di ogni tip viene percorsa **dentro** la finestra. Per questo
 alzare `-n` "aggiusta" il grafo: fa rientrare i genitori di un merge, che senza entrambi non è
 ricostruibile (e il commit finisce in una lane laterale o in un warning). Il costo cresce con i

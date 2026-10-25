@@ -224,6 +224,7 @@ class RenderLabelTest(unittest.TestCase):
                               linear=True, head="main")
         tags = self.tags_of(out)
         self.assertEqual(tags, ["breve", "t1 +2"])
+        # "git2" della palette contiene "t2": si controllano i tag, non tutto l'output
         self.assertNotIn("t2", " ".join(tags))
 
     def test_virgolette_nel_subject_rese(self):
@@ -414,7 +415,8 @@ class GitErrorTest(unittest.TestCase):
                 gitgraph.read_graph(".", 10)
 
     def test_nessun_commit(self):
-        with mock.patch.object(gitgraph, "git", side_effect=["true\n", ""]):
+        # worktree, heads, remotes, log
+        with mock.patch.object(gitgraph, "git", side_effect=["true\n", "", "", ""]):
             with self.assertRaisesRegex(gitgraph.GitError, "nessun commit trovato"):
                 gitgraph.read_graph(".", 10)
 
@@ -463,10 +465,10 @@ class ReadGraphParsingTest(unittest.TestCase):
     S = "\x1f"  # gitgraph.SEP: il formato del log e' un contratto, non un dettaglio interno
 
     def read(self, log, refs="tag v1 A1 A1\n"):
-        # ordine delle chiamate a git in read_graph(): worktree, log, tag, HEAD, heads, remotes
+        # ordine delle chiamate a git in read_graph(): worktree, heads, remotes, log, tag, HEAD
         with mock.patch.object(gitgraph, "git",
-                               side_effect=["true\n", log, refs, "main\n",
-                                            "refs/heads/main a1 \n", ""]):
+                               side_effect=["true\n", "refs/heads/main a1 \n", "", log,
+                                            refs, "main\n"]):
             return gitgraph.read_graph(".", 10)
 
     def test_subject_con_pipe_intatto(self):

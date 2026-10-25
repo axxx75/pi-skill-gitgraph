@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Storia git -> Mermaid gitGraph: rami, fork e merge ricostruiti.
 
-Destinazioni, esclusive: --png FILE (render locale con mmdc, niente stdout) oppure -o FILE (file,
+Destinazioni, esclusive: --png FILE (render locale con mmdc; stdout = riga alt) oppure -o FILE (file,
 avvolto nel fence ```mermaid con --md) oppure stdout (Mermaid puro, col fence con --md). --png
 non si combina con -o/--md: chiedere due destinazioni e' un errore (exit 2), non uno scarto
 silenzioso. --linear disattiva la ricostruzione: soli commit in ordine parents-first. Tutto
@@ -236,8 +236,12 @@ def read_graph(repo, n, linear=False):
     if not is_worktree(repo):
         raise GitError(f"{repo}: non e' un repository git")
 
+    # la finestra segue gli stessi ref delle lane (P2-03): --all includerebbe i commit
+    # raggiungibili solo da fork/upstream, che finirebbero appesi alla lane corrente
+    tips = branch_tips(repo)
+    revs = [sha for _, sha in tips] or ["--all"]
     # commit -> ([parents], subject), dal piu' recente al piu' vecchio
-    log = git(repo, "log", "--all", "--topo-order", f"-n{n}",
+    log = git(repo, "log", "--topo-order", f"-n{n}", *revs,
               f"--pretty=format:%h{SEP}%H{SEP}%P{SEP}%s")
     short, commits = {}, {}
     # split("\n") e non splitlines(): git separa i commit con \n, mentre splitlines()
@@ -270,7 +274,7 @@ def read_graph(repo, n, linear=False):
     head = git(repo, "rev-parse", "--abbrev-ref", "HEAD", strict=False).strip()
     if linear:
         return commits, short, tags, [], head
-    return commits, short, tags, branch_tips(repo), head
+    return commits, short, tags, tips, head
 
 
 def render(commits, short, tags, tips, linear=False, label_len=LABEL_LEN_DEFAULT,

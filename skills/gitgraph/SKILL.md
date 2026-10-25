@@ -18,7 +18,7 @@ python3 {baseDir}/scripts/gitgraph.py [REPO] [-n 30] [-o FILE] [--md] [--png FIL
 | Opzione | Significato |
 |---|---|
 | `REPO` | path del repository, default `.` |
-| `-n N` | finestra di ricostruzione, default 30: i commit letti da `git log --all`, su cui la ricostruzione lavora (oltre il grafo diventa illeggibile; alzarla fa rientrare i genitori dei merge, quindi più rami = più lento) |
+| `-n N` | finestra di ricostruzione, default 30: i commit letti da `git log` sui soli rami tenuti (locali + `origin`), su cui la ricostruzione lavora (oltre il grafo diventa illeggibile; alzarla fa rientrare i genitori dei merge, quindi più rami = più lento) |
 | `-o FILE` | scrive su file invece che su stdout |
 | `--md` | avvolge l'output nel fence ```` ```mermaid ````: `-o grafo.md` è pronto per la preview |
 | `--png FILE` | renderizza il PNG con `mmdc` (larghezza 1600px, sfondo bianco o scuro con `--theme dark`); stdout = sola riga `![alt](FILE)` pronta da incollare; incompatibile con `-o`/`--md` (exit 2) |
@@ -54,7 +54,7 @@ stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` è la sola r
 - `--png` dipende da `mmdc` e da un Chromium: se manca un pezzo lo script esce con il messaggio giusto (installazione e diagnosi in `references/png-setup.md`).
 - Nessuna pagina pubblicata: il rendering lo fa `mmdc` in locale, la preview di VS Code (estensione Mermaid Chart, richiede workspace trusted) o mermaid.live.
 - Nessun file `.md` viene scritto senza `-o`: l'agente sceglie il path e lo dice all'utente.
-- **Ref remoti**: le lane dei remoti arrivano solo da `origin` (se esiste; senza `origin` si usano i remoti presenti). I ref di fork/upstream non aprono lane, anche se sono centinaia. Costo: due `git for-each-ref` su tutti i ref (due processi, non uno per ramo) più il walk first-parent di ogni tip dentro la finestra `-n`; misurato su 216 ref: ~0,06 s, contro ~0,05 s su 4 ref — il limite vero è la leggibilità (216 ref senza filtro = 215 lane).
+- **Ref remoti**: le lane dei remoti arrivano solo da `origin` (se esiste; senza `origin` si usano i remoti presenti). I ref di fork/upstream non aprono lane e i loro commit restano fuori dalla finestra, anche se sono centinaia. Costo: due `git for-each-ref` su tutti i ref (due processi, non uno per ramo) più il walk first-parent di ogni tip dentro la finestra `-n`; misurato su 216 ref: ~0,06 s, contro ~0,05 s su 4 ref — il limite vero è la leggibilità (216 ref senza filtro = 215 lane).
 - **Scritture**: nessun file di stato, nessuna cache, niente dentro il repo target. Lo script scrive solo dove glielo chiedi (`-o FILE`, `--png FILE`, qualunque path), più `in.mmd` e `puppeteer.json` dentro una `TemporaryDirectory` di sistema cancellata all'uscita. I file che crei restano: se serve pulizia, rimuovili tu.
 - Fila indiana con `--linear` o quando la finestra taglia i genitori di un merge.
 - Repo divergenti (locale `main` indietro rispetto a `origin/main`) producono due lane: è la storia reale, non un errore.

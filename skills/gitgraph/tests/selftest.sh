@@ -114,18 +114,20 @@ grep -q 'warning: ramo "feature[/_]x": "feature_x"' "$tmp/col.err" \
 [ "$(grep -c 'commit id:\|merge .* id:' <<<"$cout")" -eq 7 ] \
   || { echo "FAIL: collisione, commit persi"; fail=1; }
 
-# P2-03: dei remoti conta solo origin; un ref upstream/fork non apre lane
+# P2-03: dei remoti conta solo origin; i commit raggiungibili solo da upstream non entrano
 rem="$tmp/rem"; init "$rem"
 rg(){ git -C "$rem" -c user.email=t@t.t -c user.name=t "$@"; }
 echo r > "$rem/f.txt"; rg add -A; rg commit -qm R
 tree=$(rg rev-parse HEAD^{tree}); base=$(rg rev-parse HEAD)
 rg update-ref refs/remotes/origin/dev "$(rg commit-tree "$tree" -p "$base" -m "lato origin")"
-rg update-ref refs/remotes/upstream/fork "$(rg commit-tree "$tree" -p "$base" -m "fork upstream")"
+rg update-ref refs/remotes/upstream/fork "$(rg commit-tree "$tree" -p "$base" -m "solo upstream")"
 rout=$(python3 "$here/scripts/gitgraph.py" "$rem") || { echo "FAIL: ref remoti, exit non-zero"; exit 1; }
 grep -qx '    branch origin_dev' <<<"$rout" \
   || { echo "FAIL: manca la lane origin_dev"; fail=1; }
-if grep -q 'upstream_fork' <<<"$rout"; then
-  echo "FAIL: un ref di upstream ha aperto una lane"; fail=1
+grep -q 'lato origin' <<<"$rout" \
+  || { echo "FAIL: il commit di origin e' fuori dalla finestra"; fail=1; }
+if grep -q 'upstream' <<<"$rout"; then
+  echo "FAIL: un ref o un commit di upstream e' nel grafo"; fail=1
 fi
 
 # etichette: troncatura a confine di parola, --label-len, multi-tag mai spezzato
