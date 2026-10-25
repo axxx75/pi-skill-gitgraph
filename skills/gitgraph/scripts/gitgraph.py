@@ -175,7 +175,13 @@ def read_graph(repo, n, linear=False):
     log = git(repo, "log", "--all", "--topo-order", f"-n{n}",
               f"--pretty=format:%h{SEP}%H{SEP}%P{SEP}%s")
     short, commits = {}, {}
-    for line in log.splitlines():
+    # split("\n") e non splitlines(): git separa i commit con \n, mentre splitlines()
+    # spezza anche su \x0b, \x0c, \x85, U+2028 e simili, che possono stare in un subject
+    for line in log.split("\n"):
+        if not line:
+            continue
+        if line.count(SEP) < 3:
+            raise GitError(f"log git non interpretabile: {line!r}")
         # maxsplit: un campo in piu' resta nel subject invece di rompere l'unpacking
         h, full, parents, subject = line.split(SEP, 3)
         short[full] = h

@@ -294,6 +294,16 @@ class ReadGraphParsingTest(unittest.TestCase):
         commits = self.read(f"a1{self.S}A1{self.S}{self.S}a{self.S}b\n")[0]
         self.assertEqual(commits["A1"], ([], f"a{self.S}b"))
 
+    def test_subject_con_separatore_di_riga_resta_una_sola_riga(self):
+        # splitlines() spezzava anche su \x0b: la coda senza SEP era un ValueError
+        commits = self.read(f"a1{self.S}A1{self.S}{self.S}prima\x0bdopo\n")[0]
+        self.assertEqual(commits, {"A1": ([], "prima\x0bdopo")})
+        self.assertEqual(gitgraph.label(commits["A1"][1]), "prima dopo")
+
+    def test_riga_troncata_e_un_errore_leggibile(self):
+        with self.assertRaisesRegex(gitgraph.GitError, "log git non interpretabile"):
+            self.read(f"a1{self.S}A1{self.S}\n")
+
     def test_tag_con_spazio_e_un_errore_leggibile(self):
         # git non crea un ref con spazio (check-ref-format): il formato si prova diretto
         for refs in ("commit release 1.0 A1 A1\n", "commit release 1.0 A1 \n"):
