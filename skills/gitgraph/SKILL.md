@@ -12,7 +12,7 @@ Produce il codice Mermaid e, con `--png`, il rendering locale. Tre destinazioni:
 ## Uso
 
 ```bash
-python3 {baseDir}/scripts/gitgraph.py [REPO] [-n 30] [-o FILE] [--md] [--png FILE] [--linear] [--label-len N]
+python3 {baseDir}/scripts/gitgraph.py [REPO] [-n 30] [-o FILE] [--md] [--png FILE] [--width N] [--theme NOME] [--font N] [--linear] [--label-len N]
 ```
 
 | Opzione | Significato |
@@ -21,18 +21,25 @@ python3 {baseDir}/scripts/gitgraph.py [REPO] [-n 30] [-o FILE] [--md] [--png FIL
 | `-n N` | finestra di ricostruzione, default 30: i commit letti da `git log --all`, su cui la ricostruzione lavora (oltre il grafo diventa illeggibile; alzarla fa rientrare i genitori dei merge, quindi più rami = più lento) |
 | `-o FILE` | scrive su file invece che su stdout |
 | `--md` | avvolge l'output nel fence ```` ```mermaid ````: `-o grafo.md` è pronto per la preview |
-| `--png FILE` | renderizza il PNG con `mmdc` (largo 1600px, sfondo bianco); niente stdout; incompatibile con `-o`/`--md` (exit 2) |
+| `--png FILE` | renderizza il PNG con `mmdc` (larghezza 1600px, sfondo bianco o scuro con `--theme dark`); stdout = sola riga `![alt](FILE)` pronta da incollare; incompatibile con `-o`/`--md` (exit 2) |
+| `--width N` | larghezza del PNG in px (default 1600): alzala per un grafo largo invece di togliere commit con `-n` |
+| `--theme NOME` | tema Mermaid: `neutral` (default, contrasto più alto), `default`, `dark`, `forest`; con `dark` anche lo sfondo del PNG è scuro |
+| `--font N` | font del diagramma in px (default 16): alzalo se il grafo si rimpicciolisce fino a hash illeggibili |
 | `--linear` | fila indiana, un solo ramo: ripiego se la ricostruzione esce sbagliata |
 | `--label-len N` | caratteri massimi del testo dell'etichetta, troncato a confine di parola con `…` (default 32, ellissi compresa, `0` = soggetto intero, 10-12 per grafi stretti); con più tag `+N` è accodato a parte |
 
-stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` lo stdout resta vuoto. Le destinazioni sono esclusive: `--png` **non si combina** con `-o` né con `--md` (errore, exit 2: scegli una destinazione), mentre `-o` con `--md` resta valido — per avere PNG e `.md` invoca lo script due volte. Warning e diagnostica vanno su stderr. `--png` richiede `mmdc` e un Chromium: installazione e diagnosi in `references/png-setup.md`.
+stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` è la sola riga `![alt](file.png)` da incollare nel documento che ospita l'immagine (l'alt descrive commit e rami: non ometterlo). Le destinazioni sono esclusive: `--png` **non si combina** con `-o` né con `--md` (errore, exit 2: scegli una destinazione), mentre `-o` con `--md` resta valido — per avere PNG e `.md` invoca lo script due volte. Warning e diagnostica vanno su stderr. `--png` richiede `mmdc` e un Chromium: installazione e diagnosi in `references/png-setup.md`.
 
 ## Passi
 
 1. Esegui lo script col **path assoluto** del repo e `-n` adeguato (30 è il default; 10-15 se serve un grafo stretto).
    Fatto quando: stdout contiene `gitGraph` e almeno un `commit id:` (e nessun warning su stderr).
 2. Se stderr riporta `commit fuori dalle catene principali` o `merge non ricostruiti`: un merge si ricostruisce solo con entrambi i genitori nella finestra → riprova con `-n` più alto; se il repo è troppo grande per un grafo leggibile, consegna il risultato dicendo quali rami mancano.
-3. Consegna: `--png <path>` se serve un'immagine (Telegram, report, doc), `-o <repo>-history.md --md` per la preview in VS Code (`Ctrl+Shift+V`), testo + link a mermaid.live se l'utente vuole condividerlo. Non incollare tu nulla su servizi esterni e non inventare path: dì dove hai scritto.
+3. Consegna: `--png <path>` se serve un'immagine (Telegram, report, doc) — stdout è già
+   `![alt](file.png)`: incolla quella riga nel documento insieme all'immagine, **non omettere
+   l'alt** (è il testo equivalente del diagramma). `-o <repo>-history.md --md` per la preview in VS
+   Code (`Ctrl+Shift+V`), testo + link a mermaid.live se l'utente vuole condividerlo. Non incollare
+   tu nulla su servizi esterni e non inventare path: dì dove hai scritto.
 
 ## Cosa ricostruisce
 
@@ -43,7 +50,7 @@ stdout è Mermaid puro; con `--md` è un blocco fences; con `--png` lo stdout re
 
 ## Limiti
 
-- **Etichette lunghe**: Mermaid gitGraph usa una spaziatura fissa (~40 unità SVG per commit) e non la espone in configurazione (`nodeLabel.width` è ignorato). Oltre ~8 caratteri le etichette di commit adiacenti nella stessa lane possono sovrapporsi e risultare tagliate: non è un difetto dello script né del PNG (che è solo l'output del renderer, non un file ritoccabile). Rimedio: `--label-len` contenuto (10-12) e/o `-n` ridotto, accettando subject abbreviati.
+- **Etichette lunghe**: Mermaid gitGraph usa una spaziatura fissa (~40 unità SVG per commit) e non la espone in configurazione (`nodeLabel.width` è ignorato). Oltre ~8 caratteri le etichette di commit adiacenti nella stessa lane possono sovrapporsi e risultare tagliate: non è un difetto dello script né del PNG (che è solo l'output del renderer, non un file ritoccabile). Rimedio: `--label-len` contenuto (10-12) e/o `-n` ridotto, accettando subject abbreviati; per il PNG ci sono `--width` e `--font`, così si guadagna spazio invece di togliere commit.
 - `--png` dipende da `mmdc` e da un Chromium: se manca un pezzo lo script esce con il messaggio giusto (installazione e diagnosi in `references/png-setup.md`).
 - Nessuna pagina pubblicata: il rendering lo fa `mmdc` in locale, la preview di VS Code (estensione Mermaid Chart, richiede workspace trusted) o mermaid.live.
 - Nessun file `.md` viene scritto senza `-o`: l'agente sceglie il path e lo dice all'utente.

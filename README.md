@@ -8,7 +8,9 @@ rendering PNG locale.
 
 *Esempio generato con `mmdc 12.0.0` (§Install) e il Chromium risolto da `chrome_bin()` su un repo di
 prova con due rami e due merge, `--label-len 12` per un grafo stretto; la versione del browser non è
-registrata nell'asset. I merge portano l'id del commit di merge, i tag git compaiono come `tag:` (se
+registrata nell'asset. Le lane usano la palette ad alto contrasto del tema `neutral` (default): il
+colore non è l'unico segnale, ogni commit porta la sua etichetta. I merge portano l'id del commit di
+merge, i tag git compaiono come `tag:` (se
 il commit ne ha più di uno: il primo più `+N`), i subject sono troncati a `--label-len` caratteri
 (default 32, **ellissi `…` compresa**) a confine di parola, con taglio duro se il confine
 lascerebbe meno di metà del testo. Ricetta:
@@ -117,7 +119,10 @@ un commit, un repo vuoto e un clone shallow) e verifica
 - un repo a un solo commit produce un grafo con un commit; un repo vuoto esce con 1 e `nessun commit trovato`; un clone `--depth 1` produce un grafo valido;
 - escaping e parsing: `"`, `\`, `#`, backtick e caratteri di controllo nel subject o nel tag restano renderizzabili; un subject con `|` non rompe il log; un tag in formato inatteso esce con `tag non interpretabile`;
 - collisione di nomi sanificati (`feature/x` + `feature_x`): due lane distinte, warning su stderr;
-- `--png` produce un file non vuoto (se `mmdc` è installato, altrimenti `SKIP`); una `mmdc --version` diversa da `12.0.0` produce un `WARN` su stderr, non un fallimento.
+- `--png` produce un file non vuoto (se `mmdc` è installato, altrimenti `SKIP`); una `mmdc --version` diversa da `12.0.0` produce un `WARN` su stderr, non un fallimento;
+- `--png` stampa su stdout la sola riga `![Storia git: N commit su M rami](file.png)`; `--width 800` è rispettata (larghezza letta dall'IHDR del PNG);
+- `--theme` e `--font` compaiono nella direttiva `%%{init}%%` (`"theme": "dark"`, `"fontSize": "20px"`) e `--width 0` esce con 2 e `serve --width >= 1`;
+- sandbox Chromium: il render di default gira con la sandbox attiva e `GITGRAPH_NO_SANDBOX=1` produce comunque il PNG (il gate disattiva la sandbox, non il render).
 
 Lo script gira con `set -euo pipefail`: un comando che fallisce ferma il test (nessun falso verde) e
 `git init -b` ha un fallback senza `-b` per git < 2.28.
@@ -162,11 +167,16 @@ python3 skills/gitgraph/scripts/gitgraph.py ~/un/repo -n 15 --png /tmp/grafo.png
 | `-n N` | finestra di ricostruzione in commit, default 30 (vedi §`-n`: finestra di ricostruzione) |
 | `-o FILE` | scrive su file invece che su stdout |
 | `--md` | avvolge l'output nel fence ```` ```mermaid ```` |
-| `--png FILE` | renderizza il PNG con `mmdc` (largo 1600 px, sfondo bianco); niente stdout; incompatibile con `-o`/`--md` (exit 2), vedi §Output possibili |
+| `--png FILE` | renderizza il PNG con `mmdc` (larghezza 1600 px, sfondo bianco o scuro con `--theme dark`); stdout = sola riga `![alt](FILE)` pronta da incollare; incompatibile con `-o`/`--md` (exit 2), vedi §Output possibili |
+| `--width N` | larghezza del PNG in px (default 1600): alzala per un grafo largo invece di togliere commit con `-n` |
+| `--theme NOME` | tema Mermaid: `neutral` (default, contrasto più alto), `default`, `dark`, `forest`; con `dark` anche lo sfondo del PNG è scuro |
+| `--font N` | font del diagramma in px (default 16): alzalo se il grafo si rimpicciolisce fino a testo illeggibile |
 | `--linear` | fila indiana, un solo ramo: ripiego se la ricostruzione esce sbagliata |
 | `--label-len N` | caratteri massimi del testo dell'etichetta, troncato a confine di parola con `…` (default 32, ellissi compresa, `0` = soggetto intero); con più tag `+N` è accodato a parte; l'escaping può allungare la stringa (es. `#` → `#35;`) |
 
-`stdout` è Mermaid puro; i warning vanno su `stderr`. La frase dei due warning è contratto con
+`stdout` è Mermaid puro; con `--png` contiene la sola riga `![alt](file.png)` da incollare nel
+documento che ospita l'immagine (testo equivalente del diagramma, non ometterla); i warning vanno su
+`stderr`. La frase dei due warning è contratto con
 l'agente (la skill reagisce a quelle stringhe) e resta invariata: dopo, tra parentesi, arriva l'hint
 operativo con il `-n` suggerito (`-n 60` con il default 30). Con `-o` il messaggio di successo su
 `stderr` è `N commit -> /path/assoluto`: conta i soli `commit id:`, non le direttive Mermaid.
@@ -175,7 +185,8 @@ operativo con il `-n` suggerito (`-n 60` con il default 30). Con `-o` il messagg
 per commit) e non la espone in configurazione: oltre ~8 caratteri le etichette di commit adiacenti
 nella stessa lane possono sovrapporsi e restare tagliate. Non è aggirabile dallo script né dal PNG
 già renderizzato (il PNG è un artefatto del renderer, non un file modificabile). Per un grafo
-leggibile resta `--label-len` contenuto (10-12) e/o `-n` ridotto, accettando subject abbreviati.
+leggibile resta `--label-len` contenuto (10-12) e/o `-n` ridotto, accettando subject abbreviati;
+sul PNG `--width` e `--font` danno più spazio e testo più grande senza togliere commit.
 
 Un merge si ricostruisce solo con **entrambi i genitori** nella finestra di commit: se `stderr`
 segnala `commit fuori dalle catene principali` o `merge non ricostruiti`, rilancia con `-n` più alto.

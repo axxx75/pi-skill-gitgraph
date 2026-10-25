@@ -22,10 +22,26 @@ import sys
 import tempfile
 
 LABEL_LEN_DEFAULT = 32  # caratteri dell'etichetta, ellissi compresa
-PNG_SIZE = 1600  # larghezza del PNG renderizzato da mmdc
+PNG_SIZE = 1600  # larghezza del PNG renderizzato da mmdc (default di --width)
+THEME_DEFAULT = "neutral"  # tema Mermaid di default: lane piu' contrastate
+THEMES = ("default", "dark", "forest", "neutral")  # gli stessi nomi di mmdc -t
+FONT_DEFAULT = 16  # px del font del diagramma (themeVariables.fontSize)
 WINDOW_DEFAULT = 30  # -n di default: commit letti da git log (finestra di ricostruzione)
 MAIN_NAMES = ("main", "master")  # trunk noti: ordine dei tip e fallback quando HEAD non risolve
 SEP = "\x1f"  # separatore dei campi del log: '|' e' un carattere legittimo in un subject
+
+# Palette ad alto contrasto (>= 3:1 sullo sfondo bianco, WCAG 1.4.11): il colore resta
+# un segnale secondario (le etichette sono sempre visibili) ma resta leggibile anche con
+# deuteranopia/protanopia, dove la palette di default ha due lane quasi indistinguibili.
+THEME_VARS = {
+    "git0": "#0b4f9c", "git1": "#b34a00", "git2": "#1b6b3a", "git3": "#7a2ea8",
+    "git4": "#8a1c3b", "git5": "#005f6b", "git6": "#5a4b00", "git7": "#2f3b45",
+    "gitBranchLabel0": "#ffffff", "gitBranchLabel1": "#ffffff",
+    "gitBranchLabel2": "#ffffff", "gitBranchLabel3": "#ffffff",
+    "gitBranchLabel4": "#ffffff", "gitBranchLabel5": "#ffffff",
+    "gitBranchLabel6": "#ffffff", "gitBranchLabel7": "#ffffff",
+    "commitLabelColor": "#1a1a1a", "commitLabelBackground": "#f2f2f2",
+}
 
 # Warning su stderr = contratto macchina (SKILL.md, README): la frase resta invariata,
 # l'hint in coda dice cosa fare. Unica fonte: i test la verificano, non la riscrivono.
@@ -139,7 +155,21 @@ def chrome_bin():
     return None
 
 
-def render_png(mermaid, out):
+def init_directive(branch, theme=THEME_DEFAULT, font=FONT_DEFAULT):
+    """Direttiva %%{init}%% del grafo: ramo principale, tema, palette, font.
+
+    La palette (THEME_VARS) sovrascrive i colori del tema scelto: sono quelli che
+    garantiscono il contrasto delle lane. showCommitLabel tiene visibile sul ramo
+    l'etichetta del commit: il colore non e' l'unico segnale (WCAG 1.4.1).
+    """
+    return "%%{init: " + json.dumps({
+        "theme": theme,
+        "gitGraph": {"mainBranchName": branch, "showCommitLabel": True},
+        "themeVariables": dict(THEME_VARS, fontSize=f"{font}px"),
+    }) + "}%%"
+
+
+def render_png(mermaid, out, width=PNG_SIZE, background="white"):
     """Mermaid -> PNG via mmdc; esce con una riga se mmdc o Chromium mancano.
 
     Sandbox Chromium attiva: il diagramma contiene subject e nomi ramo presi dal repo,
@@ -160,7 +190,7 @@ def render_png(mermaid, out):
         with open(cfg, "w", encoding="utf-8") as f:
             json.dump({"executablePath": chrome, "args": args}, f)
         r = subprocess.run([mmdc, "-i", src, "-o", out, "-p", cfg,
-                            "--size", str(PNG_SIZE), "-b", "white", "-q"],
+                            "--size", str(width), "-b", background, "-q"],
                            capture_output=True, text=True)
         if r.returncode != 0 or not os.path.exists(out):
             sys.exit(f"mmdc fallito: {r.stderr.strip() or r.stdout.strip()}")
@@ -236,7 +266,8 @@ def read_graph(repo, n, linear=False):
 
 
 def render(commits, short, tags, tips, linear=False, label_len=LABEL_LEN_DEFAULT,
-           head="", warn=None, window=WINDOW_DEFAULT) -> list[str]:
+           head="", warn=None, window=WINDOW_DEFAULT, theme=THEME_DEFAULT,
+           font=FONT_DEFAULT) -> list[str]:
     """commits/short/tags/tips gia' letti da git -> righe Mermaid (nessun I/O).
 
     Linear: una fila parents-first. Altrimenti Graph ricostruisce le lane nello stesso
@@ -245,7 +276,7 @@ def render(commits, short, tags, tips, linear=False, label_len=LABEL_LEN_DEFAULT
     # il trunk e' quello di HEAD: "main" resta solo il fallback dichiarato (HEAD non risolve,
     # oppure e' il literal "HEAD" di un checkout detached)
     trunk = head if head not in ("", "HEAD") else MAIN_NAMES[0]
-    g = Graph(commits, short, tags, label_len, warn, trunk, window)
+    g = Graph(commits, short, tags, label_len, warn, trunk, window, theme=theme, font=font)
     if linear:
         # ordine parents-first, senza rami: il nome serve solo all'etichetta del ramo
         g.header(slug(trunk))
@@ -265,9 +296,11 @@ class Graph:
     """Ricostruzione delle lane: ogni struttura mutata e' un campo, non una cattura di closure."""
 
     def __init__(self, commits, short, tags, label_len=LABEL_LEN_DEFAULT, warn=None,
-                 trunk=MAIN_NAMES[0], window=WINDOW_DEFAULT):
+                 trunk=MAIN_NAMES[0], window=WINDOW_DEFAULT, theme=THEME_DEFAULT,
+                 font=FONT_DEFAULT):
         self.commits, self.short, self.tags = commits, short, tags
         self.label_len = label_len
+        self.theme, self.font = theme, font  # solo per la direttiva init
         self.trunk = trunk  # ramo di ripiego quando nessun tip rivendica la radice
         self.window = window  # solo per l'hint: -n raddoppiato nei warning
         self.say = warn or (lambda _msg: None)
@@ -297,8 +330,7 @@ class Graph:
         self.emit(f'commit id: "{self.short[h]}" tag: "{self.tag_of(h, self.commits[h][1])}"')
 
     def header(self, branch_name):
-        self.out.append('%%{init: {"gitGraph": {"mainBranchName": "'
-                        + branch_name + '"}}}%%')
+        self.out.append(init_directive(branch_name, self.theme, self.font))
         self.out.append("gitGraph")
 
     def uname(self, branch):
@@ -440,6 +472,13 @@ class Graph:
             self.out.pop()
 
 
+def alt_text(out):
+    """Testo alternativo del PNG (WCAG 1.1.1): commit disegnati e lane del grafo."""
+    n = sum(1 for line in out if ' id: "' in line)  # commit e merge: le righe disegnate
+    lanes = 1 + sum(1 for line in out if line.strip().startswith("branch "))
+    return f"Storia git: {n} commit su {lanes} ram{'o' if lanes == 1 else 'i'}"
+
+
 def main():
     """Entry point CLI: argomenti, I/O (stdout / -o / --png) e GitError -> sys.exit.
 
@@ -460,9 +499,19 @@ def main():
     ap.add_argument("--label-len", type=int, default=LABEL_LEN_DEFAULT,
                     help="caratteri massimi per etichetta, troncata a confine di parola "
                          "(default 32, 0 = soggetto intero)")
+    ap.add_argument("--width", type=int, default=PNG_SIZE,
+                    help="larghezza del PNG in px (default 1600)")
+    ap.add_argument("--theme", default=THEME_DEFAULT, choices=THEMES,
+                    help="tema Mermaid del diagramma (default neutral: contrasto piu' alto)")
+    ap.add_argument("--font", type=int, default=FONT_DEFAULT,
+                    help="font del diagramma in px (default 16)")
     a = ap.parse_args()
     if a.n < 1:
         ap.error("serve -n >= 1")
+    if a.width < 1:
+        ap.error("serve --width >= 1")
+    if a.font < 1:
+        ap.error("serve --font >= 1")
     if a.png and (a.o or a.md):
         # due destinazioni sono un errore: -o/--md non vanno piu' scartati in silenzio
         ap.error("--png non combinabile con -o/--md: scegli una destinazione")
@@ -475,13 +524,17 @@ def main():
         commits, short, tags, tips, head = read_graph(a.repo, a.n, a.linear)
         out = render(commits, short, tags, tips, linear=a.linear,
                      label_len=a.label_len, head=head, window=a.n,
+                     theme=a.theme, font=a.font,
                      warn=lambda msg: sys.stderr.write(msg))
     except GitError as e:
         sys.exit(str(e))
 
     text = "\n".join(out) + "\n"
     if a.png:
-        render_png(text, a.png)
+        background = "#1e1e1e" if a.theme == "dark" else "white"
+        render_png(text, a.png, a.width, background)
+        # riga pronta da incollare nel documento che ospita l'immagine (WCAG 1.1.1)
+        print(f"![{alt_text(out)}]({os.path.basename(a.png)})")
         print(f"png -> {a.png}", file=sys.stderr)
         return
     if a.md:

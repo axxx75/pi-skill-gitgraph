@@ -43,9 +43,20 @@ Le versioni precedenti sono ricostruibili dalla storia git.
   solo con `GITGRAPH_NO_SANDBOX=1` (unico nome, nessun alias), il ripiego per container/root senza
   user namespace. Motivazione e verifica in `references/png-setup.md` §3; il nome della variabile è
   contratto utente: non si cambia senza una release.
+- P2-13: il diagramma esce con **palette ad alto contrasto** (`themeVariables`: lane ≥ 3:1 sullo
+  sfondo, etichette bianche) e `showCommitLabel: true`, tema di default `neutral`; tre leve
+  esplicite `--width N`, `--theme NOME`, `--font N` al posto di larghezza 1600, tema e font cablati.
+  Con `--png` lo stdout è la riga `![Storia git: N commit su M rami](file.png)` da incollare nel
+  documento (prima era vuoto): il passo di consegna di `SKILL.md` la richiede.
 
 ### Note
 
+- **Cambio di output dichiarato (P2-13).** Il PNG di default cambia aspetto: palette ad alto
+  contrasto e tema `neutral` al posto della palette Mermaid di default su lane giallo/lime (sotto
+  3:1), quindi `assets/example.png` è stato rigenerato con la stessa ricetta. Cambia anche lo stdout
+  di `--png`, da vuoto alla riga alt: chi parsa lo stdout di `--png` trova quella riga, il path resta
+  su `stderr` (`png -> …`). La palette sovrascrive i colori delle lane anche scegliendo `--theme`:
+  il tema cambia sfondo e testi, non le tinte delle lane (sono quelle che garantiscono il contrasto).
 - **Sandbox attiva di default (P2-02).** Cambia il render solo in un punto: senza
   `GITGRAPH_NO_SANDBOX=1` il `puppeteer.json` non contiene più `--no-sandbox
   --disable-setuid-sandbox`. Verificato in questo ambiente (WSL2, utente non root): il render

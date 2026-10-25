@@ -31,7 +31,7 @@ def linear_fixture():
 
 
 def init(name):
-    return f'%%{{init: {{"gitGraph": {{"mainBranchName": "{name}"}}}}}}%%'
+    return gitgraph.init_directive(name)
 
 
 class RenderLinearTest(unittest.TestCase):
@@ -213,7 +213,7 @@ class RenderLabelTest(unittest.TestCase):
                               linear=True, head="main")
         tags = self.tags_of(out)
         self.assertEqual(tags, ["breve", "t1 +2"])
-        self.assertNotIn("t2", "\n".join(out))
+        self.assertNotIn("t2", " ".join(tags))
 
     def test_virgolette_nel_subject_rese(self):
         commits = {"c1": ([], 'fix "rotto" qui')}
@@ -509,8 +509,10 @@ class OutputPathTest(unittest.TestCase):
             with mock.patch.object(gitgraph.sys, "argv", argv), \
                     mock.patch.object(gitgraph, "read_graph",
                                       return_value=linear_fixture() + ({}, [], "")), \
-                    mock.patch.object(gitgraph, "render_png") as render_png:
-                gitgraph.main()  # nessun SystemExit
+                    mock.patch.object(gitgraph, "render_png") as render_png, \
+                    contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                gitgraph.main()  # nessun SystemExit, riga alt su stdout
         self.assertEqual(render_png.call_args[0][1], png)
 
     def test_write_atomic_contenuto_esatto_e_nessun_tmp(self):
@@ -552,6 +554,73 @@ class OutputPathTest(unittest.TestCase):
             with open(path, encoding="utf-8") as f:
                 self.assertEqual(f.read(), "vecchio\n")
             self.assertFalse(os.path.exists(path + ".tmp"))
+
+
+class InitDirectiveTest(unittest.TestCase):
+    """P2-13: palette alto contrasto, showCommitLabel e font sono nella direttiva init."""
+
+    def payload(self, line):
+        return json.loads(line[len("%%{init: "):-len("}%%")])
+
+    def test_palette_contrasto_e_show_commit_label(self):
+        payload = self.payload(gitgraph.init_directive("main"))
+        self.assertEqual(payload["theme"], gitgraph.THEME_DEFAULT)
+        self.assertEqual(payload["gitGraph"],
+                         {"mainBranchName": "main", "showCommitLabel": True})
+        self.assertEqual(payload["themeVariables"]["git0"], "#0b4f9c")
+        self.assertEqual(payload["themeVariables"]["fontSize"],
+                         f"{gitgraph.FONT_DEFAULT}px")
+
+    def test_tema_e_font_scelti_dall_utente(self):
+        payload = self.payload(gitgraph.init_directive("develop", theme="dark", font=22))
+        self.assertEqual(payload["theme"], "dark")
+        self.assertEqual(payload["themeVariables"]["fontSize"], "22px")
+
+    def test_render_propaga_tema_e_font(self):
+        commits, short = linear_fixture()
+        out = gitgraph.render(commits, short, {}, [], linear=True, head="main",
+                              theme="forest", font=20)
+        payload = self.payload(out[0])
+        self.assertEqual(payload["theme"], "forest")
+        self.assertEqual(payload["themeVariables"]["fontSize"], "20px")
+
+
+class PNGOutputTest(unittest.TestCase):
+    """P2-13: --png stampa la riga alt e propaga width, tema e font al render."""
+
+    def run_png(self, *args):
+        with tempfile.TemporaryDirectory() as d:
+            png = os.path.join(d, "grafo.png")
+            argv = ["gitgraph.py", ".", "--png", png, *args]
+            with mock.patch.object(gitgraph.sys, "argv", argv), \
+                    mock.patch.object(gitgraph, "read_graph",
+                                      return_value=linear_fixture() + ({}, [], "")), \
+                    mock.patch.object(gitgraph, "render_png") as render_png, \
+                    contextlib.redirect_stdout(io.StringIO()) as out, \
+                    contextlib.redirect_stderr(io.StringIO()):
+                gitgraph.main()
+        return out.getvalue(), render_png.call_args
+
+    def test_riga_alt_su_stdout(self):
+        out, call = self.run_png()
+        self.assertEqual(out, "![Storia git: 3 commit su 1 ramo](grafo.png)\n")
+        self.assertTrue(call[0][1].endswith("grafo.png"))  # render_png riceve il path
+
+    def test_leve_propagate_al_render(self):
+        _, call = self.run_png("--width", "800", "--theme", "dark", "--font", "20")
+        self.assertEqual(call[0][2], 800)  # width
+        self.assertEqual(call[0][3], "#1e1e1e")  # sfondo del tema dark
+
+    def test_width_o_font_non_positivi_sono_errori(self):
+        for flag in ("--width", "--font"):
+            argv = ["gitgraph.py", ".", "--png", "g.png", flag, "0"]
+            with mock.patch.object(gitgraph.sys, "argv", argv), \
+                    mock.patch.object(gitgraph, "read_graph") as read, \
+                    contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as cm:
+                    gitgraph.main()
+            self.assertEqual(cm.exception.code, 2)
+            read.assert_not_called()
 
 
 class SandboxGateTest(unittest.TestCase):

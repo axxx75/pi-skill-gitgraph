@@ -22,6 +22,10 @@ deve riuscire lo stesso (un confronto bloccante renderebbe il path `--png` non i
 altre 12.x). La 12 ha cambiato i flag (`-w/--width` non esiste più → `--size`), e la skill usa
 `--size`, `-b white`, `-q`, `-p`.
 
+Le tre leve dello script mappano cosi': `--width` → `--size` di mmdc, sfondo `-b white` (o
+`#1e1e1e` con `--theme dark`); `--theme` e `--font` finiscono nel codice Mermaid (`%%{init}%%`),
+non sono flag di mmdc, quindi valgono anche per l'output `.md`/stdout.
+
 ## 2. Chromium
 
 Ordine di risoluzione usato da `scripts/gitgraph.py`:

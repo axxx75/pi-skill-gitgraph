@@ -58,6 +58,20 @@ md=$(python3 "$here/scripts/gitgraph.py" . --md) || { echo "FAIL: --md exit non-
 head -1 <<<"$md" | grep -qx '```mermaid' || { echo "FAIL: --md non apre il fence"; fail=1; }
 tail -1 <<<"$md" | grep -qx '```' || { echo "FAIL: --md non chiude il fence"; fail=1; }
 
+# P2-13: tema, font e palette alto contrasto sono leve esplicite nell'init (anche senza mmdc)
+themed=$(python3 "$here/scripts/gitgraph.py" . --theme dark --font 20) \
+  || { echo "FAIL: --theme/--font exit non-zero"; exit 1; }
+tinit=$(head -1 <<<"$themed")
+grep -q '"theme": "dark"' <<<"$tinit" || { echo "FAIL: --theme non riflesso nell'init"; fail=1; }
+grep -q '"fontSize": "20px"' <<<"$tinit" || { echo "FAIL: --font non riflesso nell'init"; fail=1; }
+grep -q '"showCommitLabel": true' <<<"$tinit" \
+  || { echo "FAIL: showCommitLabel assente dall'init"; fail=1; }
+grep -q '"git0": "#0b4f9c"' <<<"$tinit" \
+  || { echo "FAIL: palette alto contrasto assente dall'init"; fail=1; }
+err=$(python3 "$here/scripts/gitgraph.py" . --width 0 2>&1 >/dev/null) && rc=0 || rc=$?
+[ "$rc" -eq 2 ] || { echo "FAIL: --width 0, exit $rc (atteso 2)"; fail=1; }
+grep -q 'serve --width >= 1' <<<"$err" || { echo "FAIL: --width 0, messaggio inatteso: $err"; fail=1; }
+
 # path non-repo: deve arrivare il messaggio documentato (non l'errore grezzo di git), con exit 1
 printf 'non sono un repo\n' > "$tmp/f.txt"
 git init -q --bare "$tmp/bare"
@@ -256,11 +270,26 @@ if command -v mmdc >/dev/null; then
   mmdc_ver=$(mmdc --version 2>/dev/null) || mmdc_ver='sconosciuta'
   [ "$mmdc_ver" = "$MMDC_VERSION" ] \
     || echo "WARN: mmdc $mmdc_ver != $MMDC_VERSION (PNG non confrontabile con l'asset)" >&2
-  python3 "$here/scripts/gitgraph.py" . --png "$tmp/out.png" 2>/dev/null \
+  python3 "$here/scripts/gitgraph.py" . --png "$tmp/out.png" >/dev/null 2>&1 \
     || { echo "FAIL: --png exit non-zero"; exit 1; }
   [ -s "$tmp/out.png" ] || { echo "FAIL: --png non produce il file"; fail=1; }
+  # P2-13: la riga alt e' stdout dell'invocazione --png; --width arriva a mmdc
+  # (commit+merge = 6 righe disegnate, lane feature_x + main)
+  pngout=$(python3 "$here/scripts/gitgraph.py" . --png "$tmp/out.png" 2>/dev/null) \
+    || { echo "FAIL: --png, exit non-zero con stdout catturato"; exit 1; }
+  grep -qx '!\[Storia git: 6 commit su 2 rami\](out.png)' <<<"$pngout" \
+    || { echo "FAIL: riga alt inattesa su stdout: $pngout"; fail=1; }
+  python3 "$here/scripts/gitgraph.py" . --png "$tmp/narrow.png" --width 800 >/dev/null 2>&1 \
+    || { echo "FAIL: --png --width 800 exit non-zero"; exit 1; }
+  python3 - "$tmp/narrow.png" <<'PY' || fail=1
+import struct, sys
+with open(sys.argv[1], "rb") as f:
+    head = f.read(24)
+if head[:8] != b"\x89PNG\r\n\x1a\n" or struct.unpack(">I", head[16:20])[0] != 800:
+    sys.exit("FAIL: --width 800 non rispettata nel PNG")
+PY
   # P2-02: sandbox attiva di default (il render sopra); GITGRAPH_NO_SANDBOX=1 e' il gate
-  GITGRAPH_NO_SANDBOX=1 python3 "$here/scripts/gitgraph.py" . --png "$tmp/nosandbox.png" 2>/dev/null \
+  GITGRAPH_NO_SANDBOX=1 python3 "$here/scripts/gitgraph.py" . --png "$tmp/nosandbox.png" >/dev/null 2>&1 \
     || { echo "FAIL: --png con GITGRAPH_NO_SANDBOX=1, exit non-zero"; exit 1; }
   [ -s "$tmp/nosandbox.png" ] || { echo "FAIL: GITGRAPH_NO_SANDBOX=1 non produce il file"; fail=1; }
   # il path invalido deve dirlo subito, non travestirsi da "mmdc fallito"
