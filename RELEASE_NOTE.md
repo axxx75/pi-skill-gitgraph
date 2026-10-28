@@ -4,6 +4,25 @@ Formato: una sezione per versione, dalla più recente. Ogni voce = modifica test
 allineata su tre punti (repo locale `~/PI/repos/pi-skill-gitgraph`, checkout installato, GitHub).
 Le versioni precedenti sono ricostruibili dalla storia git.
 
+## 1.1.1 — 2026-10-28
+
+**`png-setup.md` allineato all'ambiente reale (no-sudo, WSL)**
+
+- Install di `mmdc`: da `--prefix ~/.local` + symlink al `cli.js` a `npm i -g @mermaid-js/mermaid-cli@12.0.0`
+  nel prefix di pi-node, che è già nel PATH.
+- Aggiunto il pezzo che mancava e che fa fallire il `--png` a chi segue il documento:
+  `libnss3`/`libnspr4`/`libasound` non sono pacchetti di sistema, arrivano da `~/.local/chrome-libs/`
+  e servono **due wrapper** che esportano `LD_LIBRARY_PATH` (uno nel prefix di pi-node, uno in `~/bin`).
+  Sintomo senza: `error while loading shared libraries: libnspr4.so`.
+- Correzione: `PUPPETEER_SKIP_DOWNLOAD=1` non è il default giusto su una macchina pulita — senza
+  download e senza un Chromium preesistente la lista di risoluzione non trova nulla. Ora il documento
+  spiega dove puppeteer mette il binario (`~/.cache/puppeteer/chrome/<ver>/…`) e cosa fare se
+  l'archivio non si scompatta (`unzip` assente).
+- Lista di risoluzione Chromium: il ramo `browser-tools` è marcato come storico (il secondo Chromium
+  è stato rimosso il 2026-10-27).
+- Diagnosi: aggiunta la riga che distingue "Chromium assente" da "`LD_LIBRARY_PATH` non impostato".
+- Test: `tests/selftest.sh` OK, `tests/check-release.sh` OK.
+
 ## 1.1.0 — 2026-10-25
 
 **Release della remediation AARP completa: 25 task chiusi (4 P0, 6 P1, 15 P2).**
